@@ -272,6 +272,17 @@ func clampPageSize(n int) int {
 	return n
 }
 
+// clampFilePageSize is the file manager's larger page limit.
+func clampFilePageSize(n int) int {
+	if n < 1 {
+		return 10
+	}
+	if n > 100 {
+		return 100
+	}
+	return n
+}
+
 func max(a, b int) int {
 	if a > b {
 		return a
@@ -339,7 +350,7 @@ func (c *Client) ListFiles(ctx context.Context, daemonID, uuid, dir string, page
 	q.Set("uuid", uuid)
 	q.Set("target", cleanTarget(dir))
 	q.Set("page", strconv.Itoa(max(page, 0)))
-	q.Set("page_size", strconv.Itoa(clampPageSize(pageSize)))
+	q.Set("page_size", strconv.Itoa(clampFilePageSize(pageSize)))
 	if fileName != "" {
 		q.Set("file_name", fileName)
 	}
@@ -540,6 +551,9 @@ func (c *Client) Upload(ctx context.Context, daemonID, uuid, uploadDir, localPat
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, body)
 	if err != nil {
+		if closer, ok := body.(io.Closer); ok {
+			closer.Close()
+		}
 		return err
 	}
 	req.Header.Set("Content-Type", ct)

@@ -44,10 +44,12 @@ const (
 	// MCSManager file manager.
 	CapMCSInstanceList Capability = "mcs.instance.list"
 	CapMCSFileList     Capability = "mcs.file.list"
+	CapMCSFileStatus   Capability = "mcs.file.status"
 	CapMCSFileDownload Capability = "mcs.file.download"
 	CapMCSFileUpload   Capability = "mcs.file.upload"
 	CapMCSFileDelete   Capability = "mcs.file.delete"
 	CapMCSFileMkdir    Capability = "mcs.file.mkdir"
+	CapMCSFileTouch    Capability = "mcs.file.touch"
 	CapMCSFileCopy     Capability = "mcs.file.copy"
 	CapMCSFileMove     Capability = "mcs.file.move"
 	CapMCSFileChmod    Capability = "mcs.file.chmod"

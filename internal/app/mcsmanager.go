@@ -174,6 +174,13 @@ func (s *Service) MCSFiles(ctx context.Context, accountID, daemonID, uuid, dir s
 			Size: f.Size, Mode: f.Mode, Modified: f.Time,
 		})
 	}
+	sort.SliceStable(out.Entries, func(i, j int) bool {
+		a, b := out.Entries[i], out.Entries[j]
+		if a.Folder != b.Folder {
+			return a.Folder
+		}
+		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+	})
 	return out, nil
 }
 
@@ -202,7 +209,7 @@ func (s *Service) MCSMkdir(ctx context.Context, accountID, daemonID, uuid, targe
 // MCSTouch creates an empty file inside an instance.
 func (s *Service) MCSTouch(ctx context.Context, accountID, daemonID, uuid, target string) error {
 	const op = "MCSTouch"
-	if err := s.requireCapability(op, accountID, CapMCSFileText); err != nil {
+	if err := s.requireCapability(op, accountID, CapMCSFileTouch); err != nil {
 		return err
 	}
 	c, err := s.mcsClient(ctx, accountID)
@@ -320,7 +327,7 @@ func (s *Service) MCSWriteText(ctx context.Context, accountID, daemonID, uuid, t
 // MCSFileStatus returns the instance's file task state.
 func (s *Service) MCSFileStatus(ctx context.Context, accountID, daemonID, uuid string) (mcsmanager.FileStatus, error) {
 	const op = "MCSFileStatus"
-	if err := s.requireCapability(op, accountID, CapMCSFileList); err != nil {
+	if err := s.requireCapability(op, accountID, CapMCSFileStatus); err != nil {
 		return mcsmanager.FileStatus{}, err
 	}
 	c, err := s.mcsClient(ctx, accountID)

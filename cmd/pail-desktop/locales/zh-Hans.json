@@ -574,6 +574,7 @@
   "mcsFolderNameRequired": "请输入不含斜杠的名称",
   "mcsHelp": "文件从实例根目录列出。上传使用面板签发的一次性凭证。",
   "mcsInstance": "实例",
+  "mcsLoadMore": "加载更多",
   "mcsMode": "权限",
   "mcsNewFolderTitle": "新建文件夹",
   "mcsNoFiles": "此文件夹为空",

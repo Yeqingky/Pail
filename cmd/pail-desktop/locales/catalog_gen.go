@@ -5842,6 +5842,16 @@ func (msgs Messages) McsInstance() string {
 	return Catalog.Format(msgs.locale, "mcsInstance", nil)
 }
 
+// McsLoadMore says "Load more"
+// in the language the app shows.
+func McsLoadMore() string { return In(i18n.Locale()).McsLoadMore() }
+
+// McsLoadMore says "Load more"
+// in the language of msgs.
+func (msgs Messages) McsLoadMore() string {
+	return Catalog.Format(msgs.locale, "mcsLoadMore", nil)
+}
+
 // McsMode says "Mode"
 // in the language the app shows.
 func McsMode() string { return In(i18n.Locale()).McsMode() }

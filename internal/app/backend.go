@@ -200,8 +200,8 @@ func (awsBackend) NewCloud(ctx context.Context, cfg storage.Config, opts ...clou
 // mcsCapabilities are the MCSManager file manager operations Pail implements.
 var mcsCapabilities = NewCapabilitySet(
 	CapMCSInstanceList,
-	CapMCSFileList, CapMCSFileDownload, CapMCSFileUpload,
-	CapMCSFileDelete, CapMCSFileMkdir, CapMCSFileCopy, CapMCSFileMove,
+	CapMCSFileList, CapMCSFileStatus, CapMCSFileDownload, CapMCSFileUpload,
+	CapMCSFileDelete, CapMCSFileMkdir, CapMCSFileTouch, CapMCSFileCopy, CapMCSFileMove,
 	CapMCSFileChmod, CapMCSFileArchive, CapMCSFileText,
 )
 

@@ -574,6 +574,7 @@
   "mcsFolderNameRequired": "Enter a name without slashes",
   "mcsHelp": "Files are listed from the instance root. Uploads use a one-time credential from the panel.",
   "mcsInstance": "Instance",
+  "mcsLoadMore": "Load more",
   "mcsMode": "Mode",
   "mcsNewFolderTitle": "New folder",
   "mcsNoFiles": "This folder is empty",

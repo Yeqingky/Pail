@@ -24,11 +24,12 @@ type mcsState struct {
 	instances  []core.MCSInstance
 	instanceID string
 
-	path   string
-	files  []core.MCSFile
-	sel    ui.Selection[string]
-	list   ui.ListState
-	cursor int
+	path                string
+	files               []core.MCSFile
+	sel                 ui.Selection[string]
+	list                ui.ListState
+	cursor              int
+	filePage, fileTotal int
 
 	loading bool
 	err     string
@@ -133,6 +134,18 @@ func (a *app) mcsLoadInstances() {
 }
 
 func (a *app) mcsLoadFiles() {
+	a.mcsFetchFiles(0, false)
+}
+
+func (a *app) mcsMoreFiles() {
+	m := &a.tl.mcs
+	if m.loading || len(m.files) >= m.fileTotal {
+		return
+	}
+	a.mcsFetchFiles(m.filePage+1, true)
+}
+
+func (a *app) mcsFetchFiles(page int, appendRows bool) {
 	m := &a.tl.mcs
 	if m.daemonID == "" || m.instanceID == "" {
 		return
@@ -143,7 +156,7 @@ func (a *app) mcsLoadFiles() {
 	a.bg(func() func() {
 		ctx, cancel := a.timeout(60 * time.Second)
 		defer cancel()
-		p, err := a.svc.MCSFiles(ctx, acct, daemon, instance, dir, 0, 50, "")
+		p, err := a.svc.MCSFiles(ctx, acct, daemon, instance, dir, page, 100, "")
 		return func() {
 			if gen != m.gen {
 				return
@@ -153,9 +166,15 @@ func (a *app) mcsLoadFiles() {
 				m.err = humanError(err)
 				return
 			}
-			m.files, m.path = p.Entries, p.Path
-			m.sel.Clear()
-			m.cursor = -1
+			if appendRows {
+				m.files = append(m.files, p.Entries...)
+			} else {
+				m.files = p.Entries
+				m.sel.Clear()
+				m.cursor = -1
+			}
+			m.path = p.Path
+			m.filePage, m.fileTotal = p.Page, p.Total
 		}
 	})
 }
@@ -330,6 +349,13 @@ func (a *app) mcsView(c *ui.Context) {
 			tbl.Grow(1).MinHeight(0).Label(locales.McsTableLabel())
 			if tbl.Submitted() && m.cursor >= 0 && m.cursor < len(files) {
 				a.mcsOpen(files[m.cursor])
+			}
+			if len(files) < m.fileTotal {
+				ui.Row(c).Padding(0, 16, 8, 16).Shrink(0).Children(func() {
+					if secondaryButton(c, locales.McsLoadMore(), m.loading).Clicked() {
+						a.mcsMoreFiles()
+					}
+				})
 			}
 		}
 	})
