@@ -474,14 +474,31 @@ func TestMCSMSidebarAndInspector(t *testing.T) {
 	if h.a.tool != "" || !h.a.mcsBrowser() || h.a.lay.inspW <= 0 {
 		t.Fatalf("tool = %q, mcsBrowser = %v, inspector width = %v", h.a.tool, h.a.mcsBrowser(), h.a.lay.inspW)
 	}
-	h.mustHave("Instances", "Node One", "Node Two", "Survival", "Creative", "Lobby", "Upload rules", "MIME types", "Settings")
+	h.mustHave("Instances", "Node One", "Node Two", "Survival", "Creative", "Upload rules", "MIME types", "Settings")
 	h.mustHave("Overview", "Headers")
 	h.mustNotHave("Tags", "Versions", "Permissions")
+	if h.tt.HasText("Lobby") {
+		t.Fatal("the collapsed node showed its instance")
+	}
+
+	h.mustClick("Node Two")
+	h.settle()
+	h.mustHave("Lobby")
+	h.mustClick("Node Two")
+	h.settle()
+	if h.tt.HasText("Lobby") {
+		t.Fatal("the collapsed node kept its instance")
+	}
 
 	h.a.mcsFilter = "Creative"
 	h.settle()
 	if !h.tt.HasText("Creative") || h.tt.HasText("Lobby") {
 		t.Fatalf("filtered sidebar texts = %q", h.tt.Texts())
+	}
+	h.a.mcsFilter = "Lobby"
+	h.settle()
+	if !h.tt.HasText("Lobby") || h.tt.HasText("Creative") {
+		t.Fatalf("filtered tree did not reveal the collapsed node: %q", h.tt.Texts())
 	}
 	h.a.mcsFilter = ""
 	h.settle()

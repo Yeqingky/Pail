@@ -25,6 +25,7 @@ type mcsState struct {
 	instances  []core.MCSInstance
 	instanceID string
 	tree       []mcsNavNode
+	expanded   map[string]bool
 	loadedFor  string
 	navErr     string
 
@@ -205,6 +206,12 @@ func (a *app) mcsLoadDaemons() {
 			}
 			changed := daemon != m.daemonID || instance != m.instanceID
 			m.daemonID, m.instanceID = daemon, instance
+			if m.expanded == nil {
+				m.expanded = map[string]bool{}
+			}
+			if daemon != "" {
+				m.expanded[daemon] = true
+			}
 			m.syncInstances()
 			if instance == "" {
 				m.files, m.sel, m.cursor = nil, ui.Selection[string]{}, -1
@@ -235,6 +242,10 @@ func (a *app) mcsSelectInstance(daemonID, instanceID string) {
 		}
 		return
 	}
+	if m.expanded == nil {
+		m.expanded = map[string]bool{}
+	}
+	m.expanded[daemonID] = true
 	m.daemonID, m.instanceID = daemonID, instanceID
 	m.syncInstances()
 	m.path, m.files = "/", nil

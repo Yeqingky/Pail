@@ -363,15 +363,40 @@ func (a *app) mcsNav(c *ui.Context) {
 						continue
 					}
 					shown++
-					ui.Row(c).Padding(16, 10, 2, 16).Gap(6).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, icons.Get("server")).FontSize(12).TextColor(k.TextMuted)
-						ui.Text(c, n.Daemon.Name).FontSize(sizeLabel).FontWeight(500).TextColor(k.TextMuted).SingleLine().Grow(1).MinWidth(0)
-					})
-					if n.Err != "" {
-						ui.Text(c, n.Err).FontSize(sizeLabel).TextColor(k.Danger).Padding(8, 16).SingleLine()
+					nodeOpen := filter != "" || m.expanded[n.Daemon.ID]
+					node := ui.ButtonBase(c.Key("mcsnode:"+n.Daemon.ID)).Label(n.Daemon.Name).Height(28).Margin(0, 8).Padding(0, 8).Gap(6).Radius(6).AlignItems(ui.Center).Transition(hoverFade())
+					if node.Hovered() {
+						node.Background(k.SurfaceHover)
 					}
-					for _, in := range instances {
-						a.mcsSidebarItem(c, n.Daemon, in)
+					node.Children(func() {
+						if len(n.Instances) > 0 {
+							chevron := "chevron-right"
+							if nodeOpen {
+								chevron = "chevron-down"
+							}
+							ui.Icon(c, icons.Get(chevron)).FontSize(12).TextColor(k.TextMuted)
+						} else {
+							ui.Box(c).Width(12)
+						}
+						ui.Icon(c, icons.Get("server")).FontSize(14).TextColor(k.TextMuted)
+						ui.Text(c, n.Daemon.Name).FontSize(sizeBody).FontWeight(500).TextColor(k.Text).SingleLine().Grow(1).MinWidth(0)
+						if len(n.Instances) > 0 {
+							ui.Text(c, groupInt(len(n.Instances))).FontSize(sizeLabel).TextColor(k.TextSubtle).Shrink(0)
+						}
+					})
+					if node.Clicked() && len(n.Instances) > 0 {
+						if m.expanded == nil {
+							m.expanded = map[string]bool{}
+						}
+						m.expanded[n.Daemon.ID] = !m.expanded[n.Daemon.ID]
+					}
+					if n.Err != "" {
+						ui.Text(c, n.Err).FontSize(sizeLabel).TextColor(k.Danger).Padding(8, 16, 8, 32).SingleLine()
+					}
+					if nodeOpen {
+						for _, in := range instances {
+							a.mcsSidebarItem(c, n.Daemon, in)
+						}
 					}
 				}
 				if shown == 0 && len(m.tree) > 0 {
@@ -390,7 +415,7 @@ func (a *app) mcsSidebarItem(c *ui.Context, d core.MCSDaemon, in core.MCSInstanc
 	k := tk(c)
 	m := &a.tl.mcs
 	on := m.daemonID == d.ID && m.instanceID == in.UUID
-	row := ui.ButtonBase(c.Key("mcs:"+d.ID+"/"+in.UUID)).Label(in.Name).Height(28).Margin(0, 8).Padding(0, 8).Gap(8).Radius(6).AlignItems(ui.Center).Transition(hoverFade())
+	row := ui.ButtonBase(c.Key("mcs:"+d.ID+"/"+in.UUID)).Label(in.Name).Height(28).Margin(0, 8).MarginStart(26).Padding(0, 8).Gap(8).Radius(6).AlignItems(ui.Center).Transition(hoverFade())
 	switch {
 	case on:
 		row.Background(k.ActiveFill)
