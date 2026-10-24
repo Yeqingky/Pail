@@ -368,6 +368,24 @@ func TestMCSMToolDragSelectAndContextMenu(t *testing.T) {
 		t.Fatalf("drag selected %d rows, want both", h.a.tl.mcs.sel.Len())
 	}
 
+	// A drag from blank space draws a selection rectangle, as on the Windows
+	// desktop, instead of requiring the press to start on a file.
+	bx, by := r2.X+40, r2.Y+r2.H+40
+	h.tt.Press(bx, by)
+	h.tt.Move(x1, y1)
+	h.settle()
+	if !h.a.tl.mcs.marquee.on {
+		t.Fatal("blank-space drag did not start the selection rectangle")
+	}
+	if !h.a.tl.mcs.sel.Has("/world") || !h.a.tl.mcs.sel.Has("/server.jar") {
+		t.Fatalf("rectangle selected %d rows, want both", h.a.tl.mcs.sel.Len())
+	}
+	h.tt.Release(x1, y1)
+	h.settle()
+	if h.a.tl.mcs.marquee.on {
+		t.Fatal("the selection rectangle stayed after release")
+	}
+
 	if err := h.tt.Click("server.jar"); err != nil {
 		t.Fatal(err)
 	}

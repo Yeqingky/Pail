@@ -47,13 +47,26 @@ type mcsState struct {
 	renameErr  string
 	renameBusy bool
 
-	rowRects map[string]ui.Rect
+	rowRects    map[string]ui.Rect
+	tableRect   ui.Rect
+	pointerX    float32
+	pointerY    float32
+	pointerOver bool
+	marquee     mcsMarquee
 
 	codeOpen  bool
 	code      string
 	codeErr   string
 	codeBusy  bool
 	codeRetry func()
+}
+
+// mcsMarquee is a Windows-style selection rectangle started on blank table
+// space. base holds the rows chosen before a Ctrl/Cmd drag.
+type mcsMarquee struct {
+	on             bool
+	x0, y0, x1, y1 float32
+	base           map[string]struct{}
 }
 
 func (m *mcsState) daemonName() string {
@@ -217,6 +230,7 @@ func (a *app) mcsFetchFiles(page int, appendRows bool) {
 				m.files = p.Entries
 				m.sel.Clear()
 				m.cursor = -1
+				m.marquee.on, m.marquee.base = false, nil
 			}
 			m.path = p.Path
 			m.filePage, m.fileTotal = p.Page, p.Total
@@ -401,9 +415,59 @@ func (a *app) mcsView(c *ui.Context) {
 				}
 			})
 			tbl.Grow(1).MinHeight(0).Label(locales.McsTableLabel())
+			m.tableRect = tbl.Bounds()
+			_, m.pointerY, m.pointerOver = tbl.PointerPosition()
+			tbl.DrawOver(func(p *ui.Painter, r ui.Rect) {
+				if !m.marquee.on {
+					return
+				}
+				x0, x1 := min(m.marquee.x0, m.marquee.x1), max(m.marquee.x0, m.marquee.x1)
+				y0, y1 := min(m.marquee.y0, m.marquee.y1), max(m.marquee.y0, m.marquee.y1)
+				x0, y0 = max(x0, 0), max(y0, 0)
+				x1, y1 = min(x1, r.W), min(y1, r.H)
+				if x1 <= x0 || y1 <= y0 {
+					return
+				}
+				box := ui.Rect{X: r.X + x0, Y: r.Y + y0, W: x1 - x0, H: y1 - y0}
+				p.Fill(box, k.Accent.Alpha(0.12), 0)
+				p.Fill(ui.Rect{X: box.X, Y: box.Y, W: box.W, H: 1}, k.Accent.Alpha(0.75), 0)
+				p.Fill(ui.Rect{X: box.X, Y: box.Y + box.H - 1, W: box.W, H: 1}, k.Accent.Alpha(0.75), 0)
+				p.Fill(ui.Rect{X: box.X, Y: box.Y, W: 1, H: box.H}, k.Accent.Alpha(0.75), 0)
+				p.Fill(ui.Rect{X: box.X + box.W - 1, Y: box.Y, W: 1, H: box.H}, k.Accent.Alpha(0.75), 0)
+			})
+			tbl.HandleInput(func(ev ui.InputEvent) bool {
+				switch ev.Kind {
+				case ui.InputPointerDown:
+					if ev.Button != 0 {
+						return false
+					}
+					if ev.X >= m.tableRect.W-16 || ev.Y < m.bodyTop() {
+						return false
+					}
+					if _, onRow := m.rowAtYX(ev.Y); onRow {
+						return false
+					}
+					m.startMarquee(ev)
+					return true
+				case ui.InputPointerMove:
+					if !m.marquee.on {
+						return false
+					}
+					m.marquee.x1, m.marquee.y1 = ev.X, ev.Y
+					m.marqueeSelect()
+					return true
+				case ui.InputPointerUp:
+					if !m.marquee.on {
+						return false
+					}
+					m.marquee.on, m.marquee.base = false, nil
+					return true
+				}
+				return false
+			})
 			a.contextMenu(tbl, menuSpec{name: locales.McsMenuActions(), keyAt: a.mcsCursorCorner}, func(mb *menuBuilder) {
 				if !mb.keyboard {
-					if path, ok := m.rowAtPointer(tbl); ok {
+					if path, ok := m.rowAtPointer(); ok {
 						if !m.sel.Has(path) {
 							m.sel.Clear()
 							m.sel.Add(path)
@@ -705,19 +769,68 @@ func (a *app) mcsCodeDialog(c *ui.Context) {
 }
 
 // rowAtPointer returns the file row under the pointer, if any.
-func (m *mcsState) rowAtPointer(tbl ui.Element) (string, bool) {
-	_, py, over := tbl.PointerPosition()
-	if !over {
+func (m *mcsState) rowAtPointer() (string, bool) {
+	if !m.pointerOver {
 		return "", false
 	}
-	b := tbl.Bounds()
+	return m.rowAtYX(m.pointerY)
+}
+
+// rowAtYX returns the file row at table-relative y, if any.
+func (m *mcsState) rowAtYX(y float32) (string, bool) {
 	for path, r := range m.rowRects {
-		y := r.Y - b.Y
-		if py >= y && py < y+r.H {
+		top := r.Y - m.tableRect.Y
+		if y >= top && y < top+r.H {
 			return path, true
 		}
 	}
 	return "", false
+}
+
+// bodyTop is the table-relative top of the first visible file row; above it
+// is the table header.
+func (m *mcsState) bodyTop() float32 {
+	top, first := float32(0), true
+	for _, r := range m.rowRects {
+		y := r.Y - m.tableRect.Y
+		if first || y < top {
+			top, first = y, false
+		}
+	}
+	return top
+}
+
+func (m *mcsState) startMarquee(ev ui.InputEvent) {
+	base := make(map[string]struct{}, m.sel.Len())
+	for k := range m.sel.All() {
+		base[k] = struct{}{}
+	}
+	add := ev.Mods&(ui.Ctrl|ui.Cmd) != 0
+	m.marquee = mcsMarquee{on: true, x0: ev.X, y0: ev.Y, x1: ev.X, y1: ev.Y, base: base}
+	if !add {
+		m.sel.Clear()
+		m.cursor = -1
+	}
+}
+
+func (m *mcsState) marqueeSelect() {
+	y0, y1 := min(m.marquee.y0, m.marquee.y1), max(m.marquee.y0, m.marquee.y1)
+	m.sel.Clear()
+	last := -1
+	for i := range m.files {
+		f := &m.files[i]
+		hit := false
+		if r, ok := m.rowRects[f.Path]; ok {
+			top := r.Y - m.tableRect.Y
+			hit = top < y1 && top+r.H > y0
+		}
+		_, kept := m.marquee.base[f.Path]
+		if hit || kept {
+			m.sel.Add(f.Path)
+			last = i
+		}
+	}
+	m.cursor = last
 }
 
 // mcsCursorCorner is where Shift+F10 opens the file menu: below the name of
