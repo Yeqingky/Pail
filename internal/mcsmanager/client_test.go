@@ -186,6 +186,16 @@ func TestPassportURLs(t *testing.T) {
 	if want := "http://daemon.example/base/download/pw/a%20b.txt"; u != want {
 		t.Fatalf("escaped URL = %q, want %q", u, want)
 	}
+	p.Addr = "wss://daemon.example:443"
+	u, _ = c.DownloadURL(p, "a.txt")
+	if want := "https://daemon.example:443/download/pw/a.txt"; u != want {
+		t.Fatalf("wss URL = %q, want %q", u, want)
+	}
+	p.Addr = "ws://daemon.example:8080/base"
+	u, _ = c.UploadURL(p)
+	if want := "http://daemon.example:8080/base/upload/pw"; u != want {
+		t.Fatalf("ws URL = %q, want %q", u, want)
+	}
 }
 
 func TestUploadStreamsMultipart(t *testing.T) {
@@ -196,7 +206,7 @@ func TestUploadStreamsMultipart(t *testing.T) {
 			if r.URL.Query().Get("upload_dir") != "/srv/world" {
 				t.Errorf("upload_dir = %q", r.URL.Query().Get("upload_dir"))
 			}
-			io.WriteString(w, `{"status":200,"data":{"password":"pw","addr":"`+r.Host+`"}}`)
+			io.WriteString(w, `{"status":200,"data":{"password":"pw","addr":"ws://`+r.Host+`"}}`)
 		case "/upload/pw":
 			overwrite = r.URL.Query().Get("overwrite")
 			if err := r.ParseMultipartForm(1 << 20); err != nil {

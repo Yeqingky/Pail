@@ -524,13 +524,20 @@ func (c *Client) UploadPassport(ctx context.Context, daemonID, uuid, uploadDir s
 }
 
 // daemonURL builds a URL on the daemon that issued p. addr may omit its
-// scheme; the panel's scheme is used then.
+// scheme; the panel's scheme is used then. The panel reports the daemon's
+// WebSocket address when it is reached through a WebSocket reverse proxy;
+// upload and download are still plain HTTP(S) routes.
 func (c *Client) daemonURL(p Passport, route string) (string, error) {
 	addr := strings.TrimSpace(p.Addr)
 	if addr == "" || p.Password == "" {
 		return "", errors.New("the panel returned an incomplete file passport")
 	}
-	if !strings.Contains(addr, "://") {
+	switch {
+	case strings.HasPrefix(strings.ToLower(addr), "wss://"):
+		addr = "https://" + addr[len("wss://"):]
+	case strings.HasPrefix(strings.ToLower(addr), "ws://"):
+		addr = "http://" + addr[len("ws://"):]
+	case !strings.Contains(addr, "://"):
 		addr = c.base.Scheme + "://" + addr
 	}
 	u, err := url.Parse(strings.TrimRight(addr, "/"))

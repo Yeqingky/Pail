@@ -504,7 +504,7 @@ func (s *Service) MCSUpload(ctx context.Context, accountID, daemonID, uuid, remo
 - 面板请求把 API 密钥放在 `apikey` 查询参数；错误和日志不记录 URL。节点与实例列表需要管理员密钥；普通账户改由 `/api/auth?advanced=true` 读取分配给它的实例，按节点分组，节点名取备注或地址。面板拒绝请求时保留其文本说明（例如 API Key 未启用），界面在访问被拒时提示检查 API Key 与面板的 API 开关。
 - 文件路径始终是实例内相对路径（以 `/` 开头）。面板返回的 `absolutePath` 是守护进程主机路径，只用于展示或诊断，不能作为下一次请求的 `target`：守护进程会把它再接在实例根目录下，得到重复的绝对路径。
 - 文件列表的 `file_name` 过滤参数必须始终发送；空字符串表示不过滤。省略它会让面板把字面量 `undefined` 当作搜索词，从而隐藏所有文件。
-- 下载和上传使用面板签发的 one-time passport；下载写入临时文件后无覆盖发布，重名时使用编号名；上传发送 `overwrite=false`，由守护进程保留已有文件。
+- 下载和上传使用面板签发的 one-time passport；下载写入临时文件后无覆盖发布，重名时使用编号名；上传发送 `overwrite=false`，由守护进程保留已有文件。面板可能把守护进程地址报告为 `ws://` 或 `wss://`（WebSocket 反向代理），上传和下载仍是 HTTP(S) 路由，客户端会转换为 `http://` 或 `https://`。
 - `MCSDownload`/`MCSUpload` 是同步调用，界面必须在后台线程执行；它们暂不进入任务队列。
 - 该客户端只实现文档公开的文件接口；文档未给出的行为（例如目录复制的递归与冲突、下载任务进度）不在能力声明中承诺。
 
