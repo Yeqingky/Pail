@@ -71,7 +71,8 @@ func installMenu(a *app, goos string, set func(*mygo.Menu), redraw func()) bool 
 	if goos != "darwin" {
 		return false
 	}
-	set(a.nativeMenu(redraw))
+	a.menuInstall = func() { set(a.nativeMenu(redraw)) }
+	a.menuInstall()
 	return true
 }
 

@@ -147,7 +147,8 @@ func (s *Service) entry(ctx context.Context, id string) (*clientEntry, error) {
 	}
 }
 
-// storageClient returns the (cached) S3 client of an account.
+// storageClient returns the (cached) S3 client of an account, built by the
+// account's backend plugin.
 func (s *Service) storageClient(ctx context.Context, id string) (*storage.Client, error) {
 	e, err := s.entry(ctx, id)
 	if err != nil {
@@ -156,7 +157,15 @@ func (s *Service) storageClient(ctx context.Context, id string) (*storage.Client
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.st == nil {
-		c, err := storage.New(ctx, e.cfg)
+		b, err := backendFor(e.acc.Provider)
+		if err != nil {
+			return nil, err
+		}
+		factory, ok := b.(StorageFactory)
+		if !ok {
+			return nil, opErr("", ErrUnsupported, "the %s backend does not provide object storage", e.acc.Provider)
+		}
+		c, err := factory.NewStorage(ctx, e.cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -165,7 +174,8 @@ func (s *Service) storageClient(ctx context.Context, id string) (*storage.Client
 	return e.st, nil
 }
 
-// cloudClient returns the (cached) CloudFront client of an account.
+// cloudClient returns the (cached) CloudFront client of an account, built by
+// the account's backend plugin.
 func (s *Service) cloudClient(ctx context.Context, id string) (*cloud.Client, error) {
 	e, err := s.entry(ctx, id)
 	if err != nil {
@@ -174,7 +184,15 @@ func (s *Service) cloudClient(ctx context.Context, id string) (*cloud.Client, er
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.cl == nil {
-		c, err := cloud.New(ctx, e.cfg)
+		b, err := backendFor(e.acc.Provider)
+		if err != nil {
+			return nil, err
+		}
+		factory, ok := b.(CloudFactory)
+		if !ok {
+			return nil, opErr("", ErrUnsupported, "the %s backend does not provide CloudFront", e.acc.Provider)
+		}
+		c, err := factory.NewCloud(ctx, e.cfg)
 		if err != nil {
 			return nil, err
 		}

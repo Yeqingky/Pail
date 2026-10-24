@@ -60,7 +60,7 @@ func (a *app) paletteEntries() []palEntry {
 	var out []palEntry
 	for i := range a.commands {
 		cmd := &a.commands[i]
-		if cmd.Visible != nil && !cmd.Visible(a) {
+		if !a.visible(cmd) {
 			continue
 		}
 		id := cmd.ID

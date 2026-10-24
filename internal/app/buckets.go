@@ -49,6 +49,9 @@ func (s *Service) CreateBucket(ctx context.Context, accountID, name, region stri
 	if err := checkLocation(op, Location{AccountID: accountID}, false); err != nil {
 		return err
 	}
+	if err := s.requireCapability(op, accountID, CapBucketCreate); err != nil {
+		return err
+	}
 	if err := bmValidateBucketName(name); err != nil {
 		return invalid(op, "%v", err)
 	}
@@ -80,6 +83,12 @@ func (s *Service) CreateBucket(ctx context.Context, accountID, name, region stri
 // DeleteBucket deletes an empty bucket.
 func (s *Service) DeleteBucket(ctx context.Context, accountID, name string) error {
 	const op = "DeleteBucket"
+	if err := checkLocation(op, Location{AccountID: accountID, Bucket: name}, true); err != nil {
+		return err
+	}
+	if err := s.requireCapability(op, accountID, CapBucketDelete); err != nil {
+		return err
+	}
 	c, err := s.bucketClient(ctx, op, Location{AccountID: accountID, Bucket: name})
 	if err != nil {
 		return err
@@ -126,6 +135,9 @@ func bmDecoder(enc types.EncodingType) func(string) string {
 func (s *Service) EmptyBucket(accountID, name string, allVersions bool) (string, error) {
 	const op = "EmptyBucket"
 	if err := checkLocation(op, Location{AccountID: accountID, Bucket: name}, true); err != nil {
+		return "", err
+	}
+	if err := s.requireCapability(op, accountID, CapBucketEmpty); err != nil {
 		return "", err
 	}
 	title := "Empty bucket " + name

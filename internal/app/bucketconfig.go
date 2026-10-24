@@ -58,6 +58,12 @@ func (s *Service) GetBucketConfig(ctx context.Context, accountID, bucket string,
 	if err := bmValidConfig(op, c); err != nil {
 		return "", err
 	}
+	if err := checkLocation(op, Location{AccountID: accountID, Bucket: bucket}, true); err != nil {
+		return "", err
+	}
+	if err := s.requireCapability(op, accountID, CapBucketConfig); err != nil {
+		return "", err
+	}
 	cl, err := s.bucketClient(ctx, op, Location{AccountID: accountID, Bucket: bucket})
 	if err != nil {
 		return "", err
@@ -201,6 +207,12 @@ func bmDecode(js string, v any) error {
 func (s *Service) PutBucketConfig(ctx context.Context, accountID, bucket string, c BucketConfig, js string) error {
 	const op = "PutBucketConfig"
 	if err := bmValidConfig(op, c); err != nil {
+		return err
+	}
+	if err := checkLocation(op, Location{AccountID: accountID, Bucket: bucket}, true); err != nil {
+		return err
+	}
+	if err := s.requireCapability(op, accountID, CapBucketConfig); err != nil {
 		return err
 	}
 	if strings.TrimSpace(js) == "" {
@@ -365,6 +377,12 @@ func (s *Service) PutBucketConfig(ctx context.Context, accountID, bucket string,
 func (s *Service) DeleteBucketConfig(ctx context.Context, accountID, bucket string, c BucketConfig) error {
 	const op = "DeleteBucketConfig"
 	if err := bmValidConfig(op, c); err != nil {
+		return err
+	}
+	if err := checkLocation(op, Location{AccountID: accountID, Bucket: bucket}, true); err != nil {
+		return err
+	}
+	if err := s.requireCapability(op, accountID, CapBucketConfig); err != nil {
 		return err
 	}
 	switch c {

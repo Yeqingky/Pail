@@ -29,6 +29,12 @@ VersityGW 已确认的行为：PutObject 与 CompleteMultipartUpload 遵守 `If-
 
 ## 功能
 
+### 后端插件与能力
+
+| 功能 | API | 界面 | 协议测试 | 真实端到端 | 备注 |
+| --- | --- | --- | --- | --- | --- |
+| 后端插件注册、能力声明与执行前校验 | ✅ `Backend`、`Backends`、`Capability`、`Service.Capabilities`、`Service.HasCapability` | ✅ 命令、工具栏、上下文菜单、命令面板、侧栏工具与检查器标签按能力显示 | ✅ `TestBackendsDeclareCapabilities`、`TestServiceCapabilitiesFollowTheBackend`、`TestServiceRejectsACapabilityTheBackendLacks`、`TestS3AccountHidesCloudFront`、`TestBackendWithoutCapabilitiesHidesItsSurfaces` | n/a 本地注册表 | 内置 `aws` 与 `s3`；暂不支持运行时加载第三方插件 |
+
 ### 内存诊断与回收
 
 | 功能 | API | 界面 | 协议测试 | 真实端到端 | 备注 |

@@ -85,7 +85,7 @@ func (a *app) cfService() cfAPI {
 	return a.svc
 }
 
-func (a *app) cfAvailable() bool { return a.account().Provider == core.ProviderAWS }
+func (a *app) cfAvailable() bool { return a.hasCap(core.CapCloudFront) }
 
 func (a *app) cfEnter() {
 	cf := &a.tl.cf

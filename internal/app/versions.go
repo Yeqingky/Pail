@@ -21,6 +21,12 @@ import (
 // Pass the returned markers to get the next page; empty markers mean the end.
 func (s *Service) ListVersions(ctx context.Context, loc Location, keyMarker, versionMarker string) (VersionPage, error) {
 	const op = "ListVersions"
+	if err := checkLocation(op, loc, true); err != nil {
+		return VersionPage{}, err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectVersions); err != nil {
+		return VersionPage{}, err
+	}
 	c, err := s.bucketClient(ctx, op, loc)
 	if err != nil {
 		return VersionPage{}, err
@@ -87,6 +93,12 @@ func (s *Service) RestoreVersion(ctx context.Context, loc Location, ref ObjectRe
 	}
 	if ref.VersionID == "" {
 		return invalid(op, "a version ID is required")
+	}
+	if err := checkLocation(op, loc, true); err != nil {
+		return err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectVersions); err != nil {
+		return err
 	}
 	c, err := s.bucketClient(ctx, op, loc)
 	if err != nil {
@@ -177,6 +189,9 @@ func (s *Service) RestoreDeleted(sel Selection) (string, error) {
 	const op = "RestoreDeleted"
 	scope, err := bkBuildScope(op, sel, false, false)
 	if err != nil {
+		return "", err
+	}
+	if err := s.requireCapability(op, sel.AccountID, CapObjectVersions); err != nil {
 		return "", err
 	}
 	return s.submit(s.bkRestoreSpec(sel.Location, scope, bkTitle("Restore deleted", sel))), nil
@@ -277,6 +292,9 @@ func (s *Service) bkRestoreOne(ctx context.Context, r *run, c *storage.Client, l
 func (s *Service) DeleteVersions(loc Location, refs []ObjectRef) (string, error) {
 	const op = "DeleteVersions"
 	if err := checkLocation(op, loc, true); err != nil {
+		return "", err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectVersions); err != nil {
 		return "", err
 	}
 	if len(refs) == 0 {

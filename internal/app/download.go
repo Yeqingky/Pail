@@ -75,6 +75,9 @@ func (s *Service) Download(req DownloadRequest) (groupID string, err error) {
 	if err := s.requireKnownAccount(op, req.Source.AccountID); err != nil {
 		return "", err
 	}
+	if err := s.requireCapability(op, req.Source.AccountID, CapObjectDownload); err != nil {
+		return "", err
+	}
 	if !req.WholeBucket && len(req.Keys) == 0 && len(req.Versions) == 0 {
 		return "", invalid(op, "nothing selected to download")
 	}

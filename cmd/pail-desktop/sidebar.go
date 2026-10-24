@@ -5,6 +5,7 @@ import (
 
 	"github.com/DejavuMoe/Pail/cmd/pail-desktop/icons"
 	"github.com/DejavuMoe/Pail/cmd/pail-desktop/locales"
+	core "github.com/DejavuMoe/Pail/internal/app"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -211,24 +212,40 @@ func (a *app) bucketList(c *ui.Context) {
 					a.contextMenu(item, menuSpec{name: locales.MenuBucketActions(b.Name)}, func(m *menuBuilder) {
 						name := b.Name
 						m.Item(locales.SidebarOpen(), func() { a.openBucket(name) }).Icon("folder-open")
-						m.Item(locales.SidebarBucketSettings(), func() { a.openBucketSettings(name) }).Icon("sliders-horizontal")
+						if a.hasCap(core.CapBucketConfig) {
+							m.Item(locales.SidebarBucketSettings(), func() { a.openBucketSettings(name) }).Icon("sliders-horizontal")
+						}
 						m.Separator()
-						m.Item(locales.SidebarDownloadBucket(), func() { a.downloadBucket(name) }).Icon("download")
-						m.Item(locales.SidebarCopyContents(), func() { a.openBucketCopy(name, false) }).Icon("copy")
-						m.Item(locales.SidebarMoveContents(), func() { a.openBucketCopy(name, true) }).Icon("arrow-left-right")
+						if a.hasCap(core.CapObjectDownload) {
+							m.Item(locales.SidebarDownloadBucket(), func() { a.downloadBucket(name) }).Icon("download")
+						}
+						if a.hasCap(core.CapObjectCopy) {
+							m.Item(locales.SidebarCopyContents(), func() { a.openBucketCopy(name, false) }).Icon("copy")
+						}
+						if a.hasCap(core.CapObjectMove) {
+							m.Item(locales.SidebarMoveContents(), func() { a.openBucketCopy(name, true) }).Icon("arrow-left-right")
+						}
 						m.Separator()
-						m.Item(locales.SidebarChangeClass(), func() {
-							a.openRewrite(false, rewriteScope{loc: a.bucketRoot(name), all: true})
-						}).Icon("layers")
-						m.Item(locales.SidebarChangeEncryption(), func() {
-							a.openRewrite(true, rewriteScope{loc: a.bucketRoot(name), all: true})
-						}).Icon("file-lock")
+						if a.hasCap(core.CapObjectStorageClass) {
+							m.Item(locales.SidebarChangeClass(), func() {
+								a.openRewrite(false, rewriteScope{loc: a.bucketRoot(name), all: true})
+							}).Icon("layers")
+						}
+						if a.hasCap(core.CapObjectEncryption) {
+							m.Item(locales.SidebarChangeEncryption(), func() {
+								a.openRewrite(true, rewriteScope{loc: a.bucketRoot(name), all: true})
+							}).Icon("file-lock")
+						}
 						if a.cfAvailable() {
 							m.Item(locales.SidebarInvalidateCloudFront(), func() { a.invalidateBucket(name) }).Icon("cloud")
 						}
 						m.Separator()
-						m.Item(locales.SidebarEmptyBucket(), func() { a.openEmptyBucket(name) }).Icon("trash-x")
-						m.Item(locales.SidebarDeleteBucket(), func() { a.openDeleteBucket(name) }).Icon("trash-2")
+						if a.hasCap(core.CapBucketEmpty) {
+							m.Item(locales.SidebarEmptyBucket(), func() { a.openEmptyBucket(name) }).Icon("trash-x")
+						}
+						if a.hasCap(core.CapBucketDelete) {
+							m.Item(locales.SidebarDeleteBucket(), func() { a.openDeleteBucket(name) }).Icon("trash-2")
+						}
 						m.Separator()
 						m.Item(locales.SidebarCopyName(), func() {
 							a.copyText(name)
@@ -253,6 +270,9 @@ func (a *app) toolList(c *ui.Context) {
 		sidebarLabel(c, locales.SidebarTools(), 0, nil)
 		for _, id := range toolIDs {
 			cmd := a.cmd("tool." + id)
+			if !a.visible(cmd) {
+				continue
+			}
 			a.sidebarItem(c, "t:"+id, icons.Get(cmd.Icon), cmd.text(), "", !a.enabled(cmd))
 		}
 	})

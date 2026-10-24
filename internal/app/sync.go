@@ -254,6 +254,9 @@ func (s *Service) PreviewSync(ctx context.Context, job SyncJob) (SyncPreview, er
 	if err != nil {
 		return SyncPreview{}, err
 	}
+	if err := s.requireCapability(op, job.Remote.AccountID, CapSync); err != nil {
+		return SyncPreview{}, err
+	}
 	c, err := s.bucketClient(ctx, op, job.Remote)
 	if err != nil {
 		return SyncPreview{}, err

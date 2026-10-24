@@ -16,6 +16,12 @@ import (
 // MultipartUploads lists every unfinished multipart upload under loc.Prefix.
 func (s *Service) MultipartUploads(ctx context.Context, loc Location) ([]MultipartUpload, error) {
 	const op = "MultipartUploads"
+	if err := checkLocation(op, loc, true); err != nil {
+		return nil, err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapMultipart); err != nil {
+		return nil, err
+	}
 	c, err := s.bucketClient(ctx, op, loc)
 	if err != nil {
 		return nil, err
@@ -81,6 +87,9 @@ func listMultipart(ctx context.Context, c *storage.Client, bucket, prefix string
 func (s *Service) AbortMultipartUploads(loc Location, uploads []MultipartUpload) (string, error) {
 	const op = "AbortMultipartUploads"
 	if err := checkLocation(op, loc, true); err != nil {
+		return "", err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapMultipart); err != nil {
 		return "", err
 	}
 	if len(uploads) == 0 {

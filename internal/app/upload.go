@@ -60,6 +60,9 @@ func (s *Service) Upload(req UploadRequest) (groupID string, err error) {
 	if err := s.requireKnownAccount(op, req.Dest.AccountID); err != nil {
 		return "", err
 	}
+	if err := s.requireCapability(op, req.Dest.AccountID, CapObjectUpload); err != nil {
+		return "", err
+	}
 	if len(req.Paths) == 0 {
 		return "", invalid(op, "no files or folders selected")
 	}

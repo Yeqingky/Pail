@@ -14,6 +14,9 @@ import (
 func (a *app) nativeMenu(redraw func()) *mygo.Menu {
 	item := func(id string) *mygo.MenuItem {
 		cmd := a.cmd(id)
+		if !a.visible(cmd) {
+			return nil
+		}
 		return &mygo.MenuItem{
 			ID: id, Label: cmd.text(), Accelerator: cmd.Accel, Disabled: !a.enabled(cmd),
 			Click: func(*mygo.MenuItem, *mygo.Window) { a.run(id, "menu"); redraw() },
@@ -24,8 +27,8 @@ func (a *app) nativeMenu(redraw func()) *mygo.Menu {
 		for _, id := range ids {
 			if id == "-" {
 				out = append(out, mygo.Separator())
-			} else {
-				out = append(out, item(id))
+			} else if it := item(id); it != nil {
+				out = append(out, it)
 			}
 		}
 		return out

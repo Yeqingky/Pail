@@ -5,6 +5,7 @@ import (
 
 	"github.com/DejavuMoe/Pail/cmd/pail-desktop/icons"
 	"github.com/DejavuMoe/Pail/cmd/pail-desktop/locales"
+	core "github.com/DejavuMoe/Pail/internal/app"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -12,22 +13,39 @@ import (
 // tabs by it); label says it in the language the app shows.
 var inspectorTabs = []struct {
 	name, icon string
+	cap        core.Capability
 	label      func() string
 }{
-	{"Overview", "info", locales.InspectorTabOverview}, {"Headers", "sliders-horizontal", locales.InspectorTabHeaders},
-	{"Tags", "tag", locales.InspectorTabTags}, {"Permissions", "shield", locales.InspectorTabPermissions},
-	{"Versions", "history", locales.InspectorTabVersions}, {"Preview", "eye", locales.InspectorTabPreview},
+	{"Overview", "info", "", locales.InspectorTabOverview}, {"Headers", "sliders-horizontal", core.CapObjectProperties, locales.InspectorTabHeaders},
+	{"Tags", "tag", core.CapObjectTags, locales.InspectorTabTags}, {"Permissions", "shield", core.CapObjectACL, locales.InspectorTabPermissions},
+	{"Versions", "history", core.CapObjectVersions, locales.InspectorTabVersions}, {"Preview", "eye", core.CapObjectRead, locales.InspectorTabPreview},
 }
 
 const tabPreview = 5
 
+func (a *app) inspectorTabAllowed(i int) bool {
+	if i < 0 || i >= len(inspectorTabs) {
+		return false
+	}
+	c := inspectorTabs[i].cap
+	return c == "" || a.hasCap(c)
+}
+
 // inspectorTabBar is a 40px strip of 28x28 icon tabs; the active one is
-// Text-colored with a 2px Accent underline.
+// Text-colored with a 2px Accent underline. Tabs whose capability the backend
+// does not declare are left out, and a hidden active tab falls back to
+// Overview.
 func (a *app) inspectorTabBar(c *ui.Context) {
 	k := tk(c)
+	if !a.inspectorTabAllowed(a.inspTab) {
+		a.inspTab = 0
+	}
 	tabs := ui.TabsBase(c, &a.inspTab, len(inspectorTabs))
 	tabs.List.Height(40).Gap(4).Padding(0, 12).AlignItems(ui.Center).Children(func() {
 		for i, t := range inspectorTabs {
+			if !a.inspectorTabAllowed(i) {
+				continue
+			}
 			tab := tabs.Tab(i).Size(28, 28).Radius(6).Label(t.label()).Tooltip(t.label()).Center().Transition(hoverFade())
 			on := i == a.inspTab
 			if !on && tab.Hovered() {

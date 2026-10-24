@@ -13,27 +13,29 @@ const maxInvalidationPaths = 3000
 // hook: production code never sets it.
 var cloudTestEndpoint string
 
-// cfClient returns a CloudFront client for an AWS account. CloudFront is an AWS
-// service, so every other provider is rejected without any network traffic.
+// cfClient returns a CloudFront client for an account whose backend declares
+// the cloudfront capability. No network traffic happens for any other backend.
 func (s *Service) cfClient(ctx context.Context, op, accountID string) (*cloud.Client, error) {
 	if accountID == "" {
 		return nil, invalid(op, "account is required")
 	}
-	s.mu.Lock()
-	rec, ok := s.accountLocked(accountID)
-	s.mu.Unlock()
-	if !ok {
-		return nil, opErr(op, ErrNotFound, "no account %q", accountID)
-	}
-	if rec.Provider != ProviderAWS {
-		return nil, opErr(op, ErrUnsupported, "CloudFront is only available for AWS accounts; %q uses provider %q", rec.Name, rec.Provider)
+	if err := s.requireCapability(op, accountID, CapCloudFront); err != nil {
+		return nil, err
 	}
 	if ep := cloudTestEndpoint; ep != "" {
 		e, err := s.entry(ctx, accountID)
 		if err != nil {
 			return nil, classify(op, err)
 		}
-		c, err := cloud.New(ctx, e.cfg, cloud.WithBaseEndpoint(ep))
+		b, err := backendFor(e.acc.Provider)
+		if err != nil {
+			return nil, classify(op, err)
+		}
+		factory, ok := b.(CloudFactory)
+		if !ok {
+			return nil, opErr(op, ErrUnsupported, "the %s backend does not provide CloudFront", e.acc.Provider)
+		}
+		c, err := factory.NewCloud(ctx, e.cfg, cloud.WithBaseEndpoint(ep))
 		return c, classify(op, err)
 	}
 	c, err := s.cloudClient(ctx, accountID)

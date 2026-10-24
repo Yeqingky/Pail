@@ -52,6 +52,9 @@ func toolbarGap(c *ui.Context) { vline(c, 16).Margin(0, 6) }
 // uploadMenu is the Upload button with its file/folder menu.
 func (a *app) uploadMenu(c *ui.Context) {
 	files, folder := a.cmd("upload.files"), a.cmd("upload.folder")
+	if !a.visible(files) || !a.visible(folder) {
+		return
+	}
 	text := locales.ToolbarUpload()
 	if a.lay.tbCompact {
 		text = ""
@@ -66,6 +69,9 @@ func (a *app) uploadMenu(c *ui.Context) {
 // cmdButton is a ghost toolbar button for a command; icon only unless label.
 func (a *app) cmdButton(c *ui.Context, id string, label bool) {
 	cmd := a.cmd(id)
+	if !a.visible(cmd) {
+		return
+	}
 	text := ""
 	if label && !a.lay.tbCompact {
 		text = cmd.text()
@@ -80,5 +86,8 @@ func (a *app) cmdButton(c *ui.Context, id string, label bool) {
 // toggleButton is an icon-only panel toggle.
 func (a *app) toggleButton(c *ui.Context, id string, on bool) {
 	cmd := a.cmd(id)
+	if !a.visible(cmd) {
+		return
+	}
 	toggleIconButton(c, icons.Get(cmd.Icon), cmd.text(), cmd.tooltip(), on).OnClick(func() { a.run(id, "toolbar") })
 }

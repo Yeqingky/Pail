@@ -206,8 +206,8 @@ func TestCloudFrontRejectsNonAWSProvider(t *testing.T) {
 	ctx := testCtx(t)
 	check := func(name string, err error) {
 		t.Helper()
-		if !IsKind(err, ErrUnsupported) || !strings.Contains(err.Error(), "AWS") {
-			t.Errorf("%s: want Unsupported mentioning AWS, got %v", name, err)
+		if !IsKind(err, ErrUnsupported) || !strings.Contains(err.Error(), "cloudfront") {
+			t.Errorf("%s: want Unsupported mentioning cloudfront, got %v", name, err)
 		}
 	}
 	_, err := e.s.Distributions(ctx, e.acc.ID)

@@ -49,6 +49,9 @@ func (s *Service) Estimate(ctx context.Context, sel Selection) (Estimate, error)
 	if err != nil {
 		return Estimate{}, err
 	}
+	if err := s.requireCapability(op, sel.AccountID, CapObjectList); err != nil {
+		return Estimate{}, err
+	}
 	c, err := s.bucketClient(ctx, op, sel.Location)
 	if err != nil {
 		return Estimate{}, err
@@ -175,6 +178,13 @@ func (s *Service) Copy(sel Selection, dest Location, opt CopyOptions) (string, e
 	if err != nil {
 		return "", err
 	}
+	capability := CapObjectCopy
+	if opt.Move {
+		capability = CapObjectMove
+	}
+	if err := s.requireCapability(op, sel.AccountID, capability); err != nil {
+		return "", err
+	}
 	plan := &bkCopyPlan{op: op, src: sel.Location, dest: dest, policy: opt.Conflict, move: opt.Move, title: bkTitle(verb, sel)}
 	if sel.AccountID != dest.AccountID {
 		return "", invalid(op, "%s between different accounts is not supported; download and upload instead", strings.ToLower(verb))
@@ -199,6 +209,9 @@ func (s *Service) Copy(sel Selection, dest Location, opt CopyOptions) (string, e
 func (s *Service) Rename(ctx context.Context, loc Location, key, newName string) (string, error) {
 	const op = "Rename"
 	if err := checkLocation(op, loc, true); err != nil {
+		return "", err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectRename); err != nil {
 		return "", err
 	}
 	if err := bkValidKey(op, key); err != nil {
@@ -392,6 +405,9 @@ func (s *Service) Delete(sel Selection) (string, error) {
 	const op = "Delete"
 	scope, err := bkBuildScope(op, sel, true, false)
 	if err != nil {
+		return "", err
+	}
+	if err := s.requireCapability(op, sel.AccountID, CapObjectDelete); err != nil {
 		return "", err
 	}
 	return s.submit(s.bkDeleteSpec(sel.Location, scope, bkTitle("Delete", sel))), nil

@@ -97,10 +97,9 @@ func normalizeAccount(a Account) (Account, error) {
 			a.Provider = ProviderAWS
 		}
 	}
-	switch a.Provider {
-	case ProviderAWS, ProviderS3:
-	default:
-		return a, fmt.Errorf("unknown provider %q", a.Provider)
+	backend, err := backendFor(a.Provider)
+	if err != nil {
+		return a, err
 	}
 	if a.Endpoint != "" {
 		u, err := url.Parse(a.Endpoint)
@@ -108,8 +107,9 @@ func normalizeAccount(a Account) (Account, error) {
 			u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(a.Endpoint, "?#") {
 			return a, errors.New("endpoint must be an http(s) URL without credentials, query or fragment")
 		}
-	} else if a.Provider == ProviderS3 {
-		return a, errors.New("an endpoint is required for S3-compatible providers")
+	}
+	if err := backend.NormalizeAccount(&a); err != nil {
+		return a, err
 	}
 	switch a.ChecksumMode {
 	case "":
@@ -353,7 +353,15 @@ func (s *Service) TestAccount(ctx context.Context, a Account, sec *Secrets) erro
 			}
 		}
 	}
-	c, err := storage.New(ctx, storageConfig(a, secrets))
+	backend, err := backendFor(a.Provider)
+	if err != nil {
+		return invalid(op, "%v", err)
+	}
+	factory, ok := backend.(StorageFactory)
+	if !ok {
+		return opErr(op, ErrUnsupported, "the %s backend does not provide object storage", a.Provider)
+	}
+	c, err := factory.NewStorage(ctx, storageConfig(a, secrets))
 	if err != nil {
 		return classify(op, err)
 	}

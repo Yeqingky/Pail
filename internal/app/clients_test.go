@@ -74,7 +74,7 @@ func TestClientCacheReadsKeyringOnceAndInvalidates(t *testing.T) {
 
 func TestCloudClientLazyAndCached(t *testing.T) {
 	s := newTestService(t, nil)
-	a, _ := s.SaveAccount(staticAccount("c", "http://localhost:1"), &Secrets{SecretAccessKey: "s"})
+	a, _ := s.SaveAccount(Account{Name: "c", Provider: ProviderAWS, Credentials: CredStatic, AccessKeyID: "AKIATEST"}, &Secrets{SecretAccessKey: "s"})
 	c1, err := s.cloudClient(testCtx(t), a.ID)
 	if err != nil {
 		t.Fatal(err)

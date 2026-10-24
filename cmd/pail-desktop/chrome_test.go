@@ -187,7 +187,7 @@ func TestPaletteListsEveryCommandAndBuckets(t *testing.T) {
 	}
 	for i := range h.a.commands {
 		cmd := &h.a.commands[i]
-		if cmd.Visible != nil && !cmd.Visible(h.a) {
+		if !h.a.visible(cmd) {
 			continue
 		}
 		if !have[strings.TrimSuffix(cmd.text(), "…")] {

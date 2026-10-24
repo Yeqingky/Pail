@@ -11,6 +11,40 @@
 - **错误统一包装。** 用 `*OpError{Op, Code, Message, RequestID, Kind}` 包装，`Kind` 取 `NotFound | AccessDenied | Unsupported | Conflict | Network | Canceled | Invalid | Other | Locked`，UI 据此显示。403 不能当作"不支持"。`Locked` 表示加密保险库已锁定（`errors.Is(err, ErrVaultLocked)`），UI 应弹出主密码输入框后重试；CLI 退出码 2。
 - **内存有界。** 已结束的任务最多保留 1000 条（FIFO 淘汰），`ClearFinished` 可手动清理。
 
+### 0.1 后端插件与能力
+
+每个账户属于一个后端插件；插件在 `internal/app/backend.go` 注册，并声明自己的 `CapabilitySet`。服务层在每个操作入口检查能力，未声明时返回 `Unsupported`，不会发起网络请求。界面通过同一个能力集隐藏命令、菜单和工具。
+
+```go
+type Capability string
+
+const (
+	CapBucketList, CapBucketCreate, CapBucketDelete, CapBucketEmpty, CapBucketConfig Capability = ...
+	CapObjectList, CapObjectRead, CapObjectUpload, CapObjectDownload                Capability = ...
+	CapObjectCopy, CapObjectMove, CapObjectRename, CapObjectDelete                   Capability = ...
+	CapObjectFolderCreate, CapObjectProperties, CapObjectTags, CapObjectACL          Capability = ...
+	CapObjectStorageClass, CapObjectEncryption, CapObjectPresign, CapObjectVersions  Capability = ...
+	CapMultipart, CapSync, CapCloudFront                                             Capability = ...
+)
+
+type CapabilitySet map[Capability]bool
+func (s CapabilitySet) Has(c Capability) bool
+
+type BackendDescriptor struct {
+	ID           string
+	Capabilities CapabilitySet
+}
+func Backends() []BackendDescriptor
+func ProviderHasCapability(provider string, c Capability) bool
+
+func (s *Service) Capabilities(accountID string) CapabilitySet
+func (s *Service) HasCapability(accountID string, c Capability) bool
+```
+
+- `Capabilities` 返回副本；未知账户返回空集，`HasCapability` 返回 false。
+- 能力是为插件实现而不是账户权限声明的：403 仍归类为 `AccessDenied`。
+- 内置插件是 `aws`（S3 操作加 `cloudfront`）与 `s3`（只有 S3 操作）。
+
 ## 1. 配置与存储（`settings.go`、`secrets.go`）
 
 配置目录：`os.UserConfigDir()/Pail`，可用 `Options.ConfigDir` 覆盖。文件一律原子写入（临时文件 → fsync → rename），权限 0600。若存在旧版的 `openS3` 目录且 `Pail` 目录尚不存在，首次启动时自动迁移一次。

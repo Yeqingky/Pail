@@ -176,6 +176,7 @@ type app struct {
 	lastCmdFrom  string
 	menu         *mygo.Menu
 	menuState    map[string]bool
+	menuInstall  func() // rebuilds the native menu when the account changes
 	commands     []command
 	commandIndex map[string]int
 }
@@ -343,6 +344,9 @@ func (a *app) selectAccount(id string) {
 	a.accountID = id
 	a.scope = Scope{AccountID: id}
 	a.navSel, a.tool = "", ""
+	if a.menuInstall != nil {
+		a.menuInstall() // capabilities may differ between accounts
+	}
 	a.buckets, a.bucketsErr = nil, ""
 	a.clearListing()
 	a.bucketsGen++

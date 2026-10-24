@@ -51,6 +51,9 @@ func (s *Service) RunSync(p SyncPreview) (string, error) {
 	if err := s.requireKnownAccount(op, job.Remote.AccountID); err != nil {
 		return "", err
 	}
+	if err := s.requireCapability(op, job.Remote.AccountID, CapSync); err != nil {
+		return "", err
+	}
 	up := job.Direction == syUp
 	prefix := job.Remote.Prefix
 	var ups, downs, dels []SyncAction

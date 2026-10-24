@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/DejavuMoe/Pail/cmd/pail-desktop/locales"
+	core "github.com/DejavuMoe/Pail/internal/app"
 	"github.com/egoist/mygo/i18n"
 	"github.com/egoist/mygo/ui"
 )
@@ -42,6 +43,10 @@ type command struct {
 	// itself only while no text field has the focus.
 	Accel   string
 	Enabled func(a *app) bool
+	// Cap is the backend capability the command needs. A command whose
+	// capability the current account's backend does not declare is hidden from
+	// menus, the toolbar, the palette and the shortcuts.
+	Cap core.Capability
 	// Visible hides the command from the context menu while false; nil is
 	// always visible.
 	Visible func(a *app) bool
@@ -99,8 +104,29 @@ func (a *app) cmd(id string) *command {
 	return nil
 }
 
-func (a *app) enabled(cmd *command) bool {
+// hasCap reports whether the current account's backend declares c. With no
+// account it returns true so the UI keeps its shape.
+func (a *app) hasCap(c core.Capability) bool {
+	ac := a.account()
+	return ac.ID == "" || core.ProviderHasCapability(ac.Provider, c)
+}
+
+// visible reports whether the command applies to the current account: the
+// backend must declare the capability the command needs, and the command's own
+// Visible test must pass. With no account the capability test is skipped, so
+// the UI keeps its shape and the command's Enabled test decides.
+func (a *app) visible(cmd *command) bool {
 	if cmd == nil {
+		return false
+	}
+	if cmd.Cap != "" && !a.hasCap(cmd.Cap) {
+		return false
+	}
+	return cmd.Visible == nil || cmd.Visible(a)
+}
+
+func (a *app) enabled(cmd *command) bool {
+	if !a.visible(cmd) {
 		return false
 	}
 	return cmd.Enabled == nil || cmd.Enabled(a)
@@ -206,8 +232,8 @@ func oneObject(a *app) bool {
 }
 
 func commandTable() []command {
-	toolCmd := func(id string, label func(locales.Messages) string, icon string) command {
-		return command{ID: "tool." + id, Label: label, Icon: icon, Run: func(a *app) { a.openTool(id) }}
+	toolCmd := func(id string, label func(locales.Messages) string, icon string, cap core.Capability) command {
+		return command{ID: "tool." + id, Label: label, Icon: icon, Cap: cap, Run: func(a *app) { a.openTool(id) }}
 	}
 	themeCmd := func(mode, icon string) command {
 		return command{ID: "theme." + mode, Icon: icon, Run: func(a *app) { a.setTheme(mode) },
@@ -228,13 +254,13 @@ func commandTable() []command {
 	}
 	cmds := []command{
 		{ID: "upload.files", Label: locales.Messages.CmdUploadFiles, Icon: "upload", Chords: []chord{chUpload}, Accel: "CmdOrCtrl+U",
-			Enabled: (*app).browsing, Run: func(a *app) { a.startUpload(false) }},
+			Cap: core.CapObjectUpload, Enabled: (*app).browsing, Run: func(a *app) { a.startUpload(false) }},
 		{ID: "upload.folder", Label: locales.Messages.CmdUploadFolder, Icon: "folder-up", Chords: []chord{chUploadDir}, Accel: "CmdOrCtrl+Shift+U",
-			Enabled: (*app).browsing, Run: func(a *app) { a.startUpload(true) }},
+			Cap: core.CapObjectUpload, Enabled: (*app).browsing, Run: func(a *app) { a.startUpload(true) }},
 		{ID: "download", Label: locales.Messages.CmdDownload, Icon: "download", Chords: []chord{chDownload}, Accel: "CmdOrCtrl+D",
-			Enabled: liveSelection, Run: func(a *app) { a.startDownload() }},
+			Cap: core.CapObjectDownload, Enabled: liveSelection, Run: func(a *app) { a.startDownload() }},
 		{ID: "newfolder", Label: locales.Messages.CmdNewFolder, Icon: "folder-plus", Chords: []chord{chNewFolder}, Accel: "CmdOrCtrl+Shift+N",
-			Enabled: (*app).browsing, Run: func(a *app) { a.openNewFolder() }},
+			Cap: core.CapObjectFolderCreate, Enabled: (*app).browsing, Run: func(a *app) { a.openNewFolder() }},
 		{ID: "open", Label: locales.Messages.CmdOpen, Icon: "folder-open",
 			Enabled: func(a *app) bool {
 				k := a.selectedKeys()
@@ -242,19 +268,19 @@ func commandTable() []command {
 			},
 			Run: func(a *app) { a.openPrefix(a.selectedKeys()[0]) }},
 		{ID: "copy", Label: locales.Messages.CmdCopy, Icon: "copy", Chords: []chord{{ui.Cmd, ui.KeyC, "Ctrl+C"}},
-			Enabled: liveSelection, Run: func(a *app) { a.copySelection(false) }},
+			Cap: core.CapObjectCopy, Enabled: liveSelection, Run: func(a *app) { a.copySelection(false) }},
 		{ID: "cut", Label: locales.Messages.CmdCut, Icon: "scissors", Chords: []chord{{ui.Cmd, ui.KeyX, "Ctrl+X"}},
-			Enabled: liveSelection, Run: func(a *app) { a.copySelection(true) }},
+			Cap: core.CapObjectMove, Enabled: liveSelection, Run: func(a *app) { a.copySelection(true) }},
 		{ID: "paste", Label: locales.Messages.CmdPaste, Icon: "clipboard-paste", Chords: []chord{{ui.Cmd, ui.KeyV, "Ctrl+V"}},
-			Enabled: canPaste, Run: func(a *app) { a.paste() }},
+			Cap: core.CapObjectCopy, Enabled: canPaste, Run: func(a *app) { a.paste() }},
 		{ID: "rename", Label: locales.Messages.CmdRename, Icon: "square-pen", Chords: []chord{{0, ui.KeyF2, "F2"}}, Accel: "F2",
-			Enabled: canRename, Run: func(a *app) { a.startRename() }},
+			Cap: core.CapObjectRename, Enabled: canRename, Run: func(a *app) { a.startRename() }},
 		{ID: "delete", Label: locales.Messages.CmdDelete, Icon: "trash-2", Chords: []chord{{0, ui.KeyDelete, "Del"}},
-			Enabled: liveSelection, Run: func(a *app) { a.askDelete() }},
+			Cap: core.CapObjectDelete, Enabled: liveSelection, Run: func(a *app) { a.askDelete() }},
 		{ID: "restore", Label: locales.Messages.CmdRestore, Icon: "undo-2", Visible: deletedOn,
-			Enabled: func(a *app) bool { return deletedOn(a) && a.sel.Len() > 0 }, Run: func(a *app) { a.restoreSelected() }},
+			Cap: core.CapObjectVersions, Enabled: func(a *app) bool { return deletedOn(a) && a.sel.Len() > 0 }, Run: func(a *app) { a.restoreSelected() }},
 		{ID: "restoreall", Label: locales.Messages.CmdRestoreAll, Icon: "undo-2", Visible: deletedOn,
-			Enabled: func(a *app) bool { return deletedOn(a) && len(a.rows) > 0 }, Run: func(a *app) { a.askRestoreAll() }},
+			Cap: core.CapObjectVersions, Enabled: func(a *app) bool { return deletedOn(a) && len(a.rows) > 0 }, Run: func(a *app) { a.askRestoreAll() }},
 		{ID: "refresh", Label: locales.Messages.CmdRefresh, Icon: "refresh-cw", Chords: []chord{{0, ui.KeyF5, "F5"}, {ui.Cmd, ui.KeyR, "Ctrl+R"}}, Accel: "F5",
 			Enabled: (*app).browsing, Run: func(a *app) { a.reload() }},
 		{ID: "selectall", Label: locales.Messages.CmdSelectAll, Icon: "check-check", Chords: []chord{{ui.Cmd, ui.KeyA, "Ctrl+A"}},
@@ -271,13 +297,13 @@ func commandTable() []command {
 			Run: func(a *app) { a.copyCDN() }},
 		{ID: "opencdn", Label: locales.Messages.CmdOpenCdn, Icon: "external-link", Visible: bucketHasCDN, Enabled: oneCDNObject,
 			Run: func(a *app) { a.openCDN() }},
-		{ID: "copysigned", Label: locales.Messages.CmdCopySigned, Icon: "link", Enabled: hasObjectSelection,
+		{ID: "copysigned", Label: locales.Messages.CmdCopySigned, Icon: "link", Cap: core.CapObjectPresign, Enabled: hasObjectSelection,
 			Run: func(a *app) { a.openSigned(a.signedObjects(), "") }},
-		{ID: "storageclass", Label: locales.Messages.CmdStorageClass, Icon: "layers", Visible: liveBrowsing, Enabled: liveSelection,
+		{ID: "storageclass", Label: locales.Messages.CmdStorageClass, Icon: "layers", Visible: liveBrowsing, Cap: core.CapObjectStorageClass, Enabled: liveSelection,
 			Run: func(a *app) { a.openRewriteSelection(false) }},
-		{ID: "encryption", Label: locales.Messages.CmdEncryption, Icon: "file-lock", Visible: liveBrowsing, Enabled: liveSelection,
+		{ID: "encryption", Label: locales.Messages.CmdEncryption, Icon: "file-lock", Visible: liveBrowsing, Cap: core.CapObjectEncryption, Enabled: liveSelection,
 			Run: func(a *app) { a.openRewriteSelection(true) }},
-		{ID: "invalidate", Label: locales.Messages.CmdInvalidate, Icon: "cloud", Visible: awsBrowsing, Enabled: liveSelection,
+		{ID: "invalidate", Label: locales.Messages.CmdInvalidate, Icon: "cloud", Visible: awsBrowsing, Cap: core.CapCloudFront, Enabled: liveSelection,
 			Run: func(a *app) { a.openInvalidation(invalidationPaths(a.selectedKeys())) }},
 		{ID: "inspector", Label: locales.Messages.CmdInspector, Icon: "panel-right", Chords: []chord{{ui.Cmd, ui.KeyI, "Ctrl+I"}}, Accel: "CmdOrCtrl+I",
 			Run: func(a *app) { a.inspectorOpen = !a.inspectorOpen }},
@@ -285,19 +311,19 @@ func commandTable() []command {
 			Run: func(a *app) { a.transfersOpen = !a.transfersOpen }},
 		{ID: "search", Label: locales.Messages.CmdSearch, Icon: "search", Chords: []chord{{ui.Cmd, ui.KeyF, "Ctrl+F"}}, Accel: "CmdOrCtrl+F",
 			Enabled: (*app).browsing, Run: func(a *app) { a.searchH.Focus() }},
-		{ID: "newbucket", Label: locales.Messages.CmdNewBucket, Icon: "plus", Enabled: (*app).hasAccount, Run: func(a *app) { a.openNewBucket() }},
-		{ID: "bucketsettings", Label: locales.Messages.CmdBucketSettings, Icon: "sliders-horizontal", Enabled: (*app).browsing,
+		{ID: "newbucket", Label: locales.Messages.CmdNewBucket, Icon: "plus", Cap: core.CapBucketCreate, Enabled: (*app).hasAccount, Run: func(a *app) { a.openNewBucket() }},
+		{ID: "bucketsettings", Label: locales.Messages.CmdBucketSettings, Icon: "sliders-horizontal", Cap: core.CapBucketConfig, Enabled: (*app).browsing,
 			Run: func(a *app) { a.openBucketSettings(a.scope.Bucket) }},
 		{ID: "vault.lock", Label: locales.Messages.CmdVaultLock, Icon: "lock", Visible: (*app).vaultMode,
 			Enabled: func(a *app) bool { return a.vaultMode() && a.vu.state.Unlocked }, Run: (*app).lockVault},
 		{ID: "vault.unlock", Label: locales.Messages.CmdVaultUnlock, Icon: "lock-open", Visible: (*app).vaultMode,
 			Enabled: (*app).vaultLocked, Run: func(a *app) { a.askUnlock("menu", nil) }},
-		toolCmd("sync", locales.Messages.CmdToolSync, "refresh-ccw"),
-		toolCmd("cloudfront", locales.Messages.CmdToolCloudfront, "cloud"),
-		toolCmd("rules", locales.Messages.CmdToolRules, "list-filter"),
-		toolCmd("mime", locales.Messages.CmdToolMime, "file-type"),
-		toolCmd("multipart", locales.Messages.CmdToolMultipart, "layers"),
-		toolCmd("settings", locales.Messages.CmdToolSettings, "settings"),
+		toolCmd("sync", locales.Messages.CmdToolSync, "refresh-ccw", core.CapSync),
+		toolCmd("cloudfront", locales.Messages.CmdToolCloudfront, "cloud", core.CapCloudFront),
+		toolCmd("rules", locales.Messages.CmdToolRules, "list-filter", ""),
+		toolCmd("mime", locales.Messages.CmdToolMime, "file-type", ""),
+		toolCmd("multipart", locales.Messages.CmdToolMultipart, "layers", core.CapMultipart),
+		toolCmd("settings", locales.Messages.CmdToolSettings, "settings", ""),
 		{ID: "palette", Label: locales.Messages.CmdPalette, Icon: "command", Chords: []chord{chPalette, chPaletteP}, Accel: "CmdOrCtrl+K",
 			Run: func(a *app) { a.openPalette() }},
 		themeCmd("system", "monitor"),
@@ -346,7 +372,7 @@ func (a *app) buildMenu(m *menuBuilder) {
 	for _, group := range contextLayout {
 		var ids []string
 		for _, id := range group {
-			if cmd := a.cmd(id); cmd.Visible == nil || cmd.Visible(a) {
+			if cmd := a.cmd(id); a.visible(cmd) {
 				ids = append(ids, id)
 			}
 		}
@@ -406,6 +432,9 @@ func (a *app) selectAll() {
 }
 
 func (a *app) openTool(id string) {
+	if !a.visible(a.cmd("tool." + id)) {
+		return
+	}
 	a.tool = id
 	a.navSel = "t:" + id
 	if id == "settings" {

@@ -201,7 +201,7 @@ func TestShellRendersKeyTexts(t *testing.T) {
 		t.Fatalf("first bucket not opened, scope=%+v", h.a.scope)
 	}
 	h.mustHave(demoAccountName, "BUCKETS", "TOOLS", "acme-assets", "acme-backups", "us-west-2", "eu-west-1", "ap-southeast-2",
-		"Sync jobs", "CloudFront", "Upload rules", "MIME types", "Multipart uploads", "Settings",
+		"Sync jobs", "Upload rules", "MIME types", "Multipart uploads", "Settings",
 		"Name", "Size", "Modified", "Storage class", "README.md", "Transfers", "Overview", "Current folder")
 	h.mustClick("acme-assets")
 	h.mustHave("assets", "website", "README.txt", "manifest.json", "Standard")

@@ -22,6 +22,15 @@ tools/pack         归档写入，保证可执行文件权限为 0755
 
 依赖方向只能向下：`cmd/*` → `internal/app` → `internal/storage` / `internal/cloud` / `internal/rules` / `internal/safepath` / `internal/trash`。界面和命令行不直接访问 S3 SDK。
 
+### 1.1 后端插件与能力
+
+- 每个账户的 `Provider` 必须对应一个已注册的后端插件；注册表在 `internal/app/backend.go`，未注册的 provider 会被拒绝。
+- 插件用 `BackendDescriptor.Capabilities` 声明实现了哪些操作。能力 ID 是稳定的字符串，例如 `bucket.list`、`object.upload`、`object.move`、`multipart`、`sync`、`cloudfront`。
+- 能力表示“插件实现了这个操作”，不表示“当前账户有权限”。服务端返回 403 时仍然是 `AccessDenied`，不能当成不支持。
+- 服务层在每个操作入口用 `requireCapability` 校验；未声明的能力返回 `Unsupported`，不执行任何网络请求。
+- 桌面界面的命令表、工具栏、上下文菜单、命令面板、侧栏工具和检查器标签都通过同一条可见性判断过滤，因此未声明的功能不会显示，也不能通过快捷键运行。
+- 内置插件：`aws` 声明 S3 协议操作加 `cloudfront`；`s3` 声明 S3 协议操作，不含 `cloudfront`。
+
 ## 2. 线程规则
 
 - 网络和文件传输绝不在 UI 线程上执行。UI 调用 Service 的方法，返回 task ID 的方法立即返回，工作在队列里进行。

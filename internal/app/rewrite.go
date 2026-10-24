@@ -273,6 +273,9 @@ func (s *Service) SetStorageClass(sel Selection, class string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := s.requireCapability(op, sel.AccountID, CapObjectStorageClass); err != nil {
+		return "", err
+	}
 	rw := &bkRewrite{
 		op: op, title: bkTitle("Set storage class "+class+" on", sel),
 		mutate: func(in *s3.CopyObjectInput, h *s3.HeadObjectOutput, cur string) (string, error) {
@@ -333,6 +336,9 @@ func (s *Service) SetEncryption(sel Selection, e Encryption) (string, error) {
 	}
 	scope, err := bkBuildScope(op, sel, false, false)
 	if err != nil {
+		return "", err
+	}
+	if err := s.requireCapability(op, sel.AccountID, CapObjectEncryption); err != nil {
 		return "", err
 	}
 	var keyB64, keyMD5 string
@@ -568,6 +574,9 @@ func (s *Service) SetProperties(sel Selection, p PropertiesPatch) (string, error
 	}
 	scope, err := bkBuildScope(op, sel, false, false)
 	if err != nil {
+		return "", err
+	}
+	if err := s.requireCapability(op, sel.AccountID, CapObjectProperties); err != nil {
 		return "", err
 	}
 	rw := &bkRewrite{

@@ -28,10 +28,13 @@ func (h *harness) openToolView(id string) {
 func TestToolsAreEnabledAndOpenFromTheSidebar(t *testing.T) {
 	h := newHarness(t, "light")
 	h.tt.Frame()
-	for _, id := range []string{"sync", "cloudfront", "rules", "mime", "multipart", "settings"} {
+	for _, id := range []string{"sync", "rules", "mime", "multipart", "settings"} {
 		if !h.a.enabled(h.a.cmd("tool." + id)) {
 			t.Errorf("tool %s is disabled", id)
 		}
+	}
+	if h.a.visible(h.a.cmd("tool.cloudfront")) {
+		t.Error("CloudFront is visible for an S3 account")
 	}
 	h.mustClick("Upload rules")
 	if h.a.tool != "rules" {
@@ -324,12 +327,17 @@ func TestMultipartNeedsABucketSelection(t *testing.T) {
 
 // ---- CloudFront ---------------------------------------------------------------------------------------
 
-func TestCloudFrontNeedsAnAWSAccount(t *testing.T) {
+func TestCloudFrontIsHiddenForANonAWSAccount(t *testing.T) {
 	h := newHarness(t, "light")
-	h.openToolView("cloudfront")
-	h.mustHave("CloudFront is available for AWS accounts")
-	h.mustNotHave("New invalidation…")
-	h.snap("cloudfront-empty-light")
+	if h.a.visible(h.a.cmd("tool.cloudfront")) {
+		t.Fatal("CloudFront is visible for an S3 account")
+	}
+	h.a.run("tool.cloudfront", "test")
+	h.settle()
+	if h.a.tool != "" {
+		t.Fatalf("a hidden tool opened: %q", h.a.tool)
+	}
+	h.mustNotHave("CloudFront")
 }
 
 type fakeCF struct {

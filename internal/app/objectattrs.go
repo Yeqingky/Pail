@@ -68,6 +68,12 @@ func (s *Service) SetTags(ctx context.Context, loc Location, ref ObjectRef, tags
 	if err := bkValidTags(op, tags); err != nil {
 		return err
 	}
+	if err := checkLocation(op, loc, true); err != nil {
+		return err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectTags); err != nil {
+		return err
+	}
 	c, err := s.bucketClient(ctx, op, loc)
 	if err != nil {
 		return err
@@ -116,6 +122,12 @@ func bkACLErr(op string, err error) error {
 func (s *Service) ACL(ctx context.Context, loc Location, ref ObjectRef) (ACL, error) {
 	const op = "ACL"
 	if err := bkRefCheck(op, ref); err != nil {
+		return ACL{}, err
+	}
+	if err := checkLocation(op, loc, true); err != nil {
+		return ACL{}, err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectACL); err != nil {
 		return ACL{}, err
 	}
 	c, err := s.bucketClient(ctx, op, loc)
@@ -170,6 +182,12 @@ var bkPermissions = map[string]types.Permission{
 func (s *Service) SetACL(ctx context.Context, loc Location, ref ObjectRef, acl ACL) error {
 	const op = "SetACL"
 	if err := bkRefCheck(op, ref); err != nil {
+		return err
+	}
+	if err := checkLocation(op, loc, true); err != nil {
+		return err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectACL); err != nil {
 		return err
 	}
 	in := &s3.PutObjectAclInput{Bucket: aws.String(loc.Bucket), Key: aws.String(ref.Key)}

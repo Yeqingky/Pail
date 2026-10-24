@@ -57,6 +57,9 @@ func (s *Service) Buckets(ctx context.Context, accountID string) ([]Bucket, erro
 	if err := checkLocation(op, Location{AccountID: accountID}, false); err != nil {
 		return nil, err
 	}
+	if err := s.requireCapability(op, accountID, CapBucketList); err != nil {
+		return nil, err
+	}
 	c, err := s.storageClient(ctx, accountID)
 	if err != nil {
 		return nil, classify(op, err)
@@ -85,6 +88,12 @@ func (s *Service) Buckets(ctx context.Context, accountID string) ([]Bucket, erro
 // binary); sorting is the UI's job.
 func (s *Service) List(ctx context.Context, loc Location, opt ListOptions) (Page, error) {
 	const op = "List"
+	if err := checkLocation(op, loc, true); err != nil {
+		return Page{}, err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectList); err != nil {
+		return Page{}, err
+	}
 	c, err := s.bucketClient(ctx, op, loc)
 	if err != nil {
 		return Page{}, err
@@ -165,6 +174,12 @@ func (s *Service) Head(ctx context.Context, loc Location, key, versionID string)
 	const op = "Head"
 	if key == "" {
 		return ObjectInfo{}, invalid(op, "key is required")
+	}
+	if err := checkLocation(op, loc, true); err != nil {
+		return ObjectInfo{}, err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectRead); err != nil {
+		return ObjectInfo{}, err
 	}
 	c, err := s.bucketClient(ctx, op, loc)
 	if err != nil {
@@ -268,6 +283,12 @@ func (s *Service) Preview(ctx context.Context, loc Location, key, versionID stri
 	if maxBytes <= 0 {
 		return nil, false, invalid(op, "maxBytes must be positive")
 	}
+	if err := checkLocation(op, loc, true); err != nil {
+		return nil, false, err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectRead); err != nil {
+		return nil, false, err
+	}
 	c, err := s.bucketClient(ctx, op, loc)
 	if err != nil {
 		return nil, false, err
@@ -328,6 +349,12 @@ func (s *Service) PresignURL(ctx context.Context, loc Location, key, versionID, 
 	}
 	if method == "PUT" && versionID != "" {
 		return "", invalid(op, "a PUT URL cannot target a version")
+	}
+	if err := checkLocation(op, loc, true); err != nil {
+		return "", err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectPresign); err != nil {
+		return "", err
 	}
 	c, err := s.bucketClient(ctx, op, loc)
 	if err != nil {
@@ -422,6 +449,12 @@ func (s *Service) CreateFolder(ctx context.Context, loc Location, name string) e
 		return invalid(op, "folder name must not contain \"/\"; create folders one level at a time")
 	case strings.ContainsAny(name, "\x00\r\n"):
 		return invalid(op, "folder name contains control characters")
+	}
+	if err := checkLocation(op, loc, true); err != nil {
+		return err
+	}
+	if err := s.requireCapability(op, loc.AccountID, CapObjectFolderCreate); err != nil {
+		return err
 	}
 	c, err := s.bucketClient(ctx, op, loc)
 	if err != nil {

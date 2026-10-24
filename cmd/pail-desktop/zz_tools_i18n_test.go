@@ -220,10 +220,11 @@ func TestI18NTools(t *testing.T) {
 
 	t.Run("cloudfront-non-aws", func(t *testing.T) {
 		h := newHarness(t, "light")
-		h.openToolView("cloudfront")
-		h.mustBeTranslated("cloudfront, not AWS")
-		h.setLocale("zh-Hans")
-		h.mustHave("CloudFront 仅适用于 AWS 账户")
+		if h.a.visible(h.a.cmd("tool.cloudfront")) {
+			t.Fatal("CloudFront is visible for an S3 account")
+		}
+		h.settle()
+		h.mustNotHave("CloudFront")
 	})
 
 	t.Run("sync", func(t *testing.T) {
