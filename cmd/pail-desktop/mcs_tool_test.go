@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -211,4 +212,92 @@ func TestMCSMToolUploadShowsATransferTask(t *testing.T) {
 	h.a.transTab = 1 // completed
 	h.settle()
 	h.mustHave("Upload eula.txt", "→ /eula.txt")
+}
+
+func TestMCSMAccountFormSwitchesToPassword(t *testing.T) {
+	h := newHarness(t, "light")
+	h.a.openAccountForm(false)
+	h.a.af.provider = providerMCS
+	h.settle()
+	h.mustHave("Sign-in method", "API key", "Endpoint")
+
+	h.a.af.mcsAuth = mcsAuthPassword
+	h.settle()
+	h.mustHave("Username", "Password", "Two-factor code")
+
+	h.a.af.name, h.a.af.endpoint = "Panel", "https://panel.example"
+	h.a.af.access, h.a.af.secret, h.a.af.mcsCode = "alice", "pw", "123456"
+	ac, sec := h.a.af.build()
+	if ac.Provider != core.ProviderMCS || ac.Credentials != core.CredPassword || ac.AccessKeyID != "alice" || ac.LoginCode != "123456" {
+		t.Fatalf("built account = %+v", ac)
+	}
+	if sec == nil || sec.SecretAccessKey != "pw" {
+		t.Fatalf("built secrets = %+v", sec)
+	}
+	if errs := h.a.af.fieldErrors(); len(errs) != 0 {
+		t.Fatalf("field errors = %v", errs)
+	}
+
+	h.a.af.access, h.a.af.secret = "", ""
+	if errs := h.a.af.fieldErrors(); errs["username"] == "" || errs["password"] == "" {
+		t.Fatalf("missing field errors = %v", errs)
+	}
+}
+
+func TestMCSMToolPromptsForTwoFactorCode(t *testing.T) {
+	var codeSeen string
+	token := "tok"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/login":
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			codeSeen = body["code"]
+			if codeSeen == "" {
+				io.WriteString(w, `{"status":200,"data":"NEED_2FA"}`)
+				return
+			}
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "cookie", Path: "/"})
+			io.WriteString(w, `{"status":200,"data":"`+token+`"}`)
+		case "/api/service/remote_services_list":
+			if r.URL.Query().Get("token") != token {
+				w.WriteHeader(http.StatusForbidden)
+				io.WriteString(w, `{"status":403,"data":"token error"}`)
+				return
+			}
+			io.WriteString(w, `{"status":200,"data":[{"uuid":"d1","ip":"10.0.0.1","port":24444,"available":true,"remarks":"Node One"}]}`)
+		case "/api/service/remote_service_instances":
+			io.WriteString(w, `{"status":200,"data":{"page":1,"pageSize":10,"maxPage":1,"data":[{"instanceUuid":"i1","status":3,"config":{"nickname":"Survival"}}]}}`)
+		case "/api/files/list":
+			io.WriteString(w, `{"status":200,"data":{"items":[],"page":0,"pageSize":100,"total":0,"absolutePath":"/opt/mcsmanager/daemon/data/InstanceData/i1/"}}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	h := newHarness(t, "light")
+	acct, err := h.env.Svc.SaveAccount(core.Account{
+		Name: "Panel", Provider: core.ProviderMCS, Endpoint: srv.URL, Credentials: core.CredPassword, AccessKeyID: "alice",
+	}, &core.Secrets{SecretAccessKey: "pw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.a.refreshAccounts()
+	h.a.selectAccount(acct.ID)
+	h.waitFor("two-factor dialog", func() bool { return h.a.tl.mcs.codeOpen })
+	h.mustHave("Two-factor code")
+	if codeSeen != "" {
+		t.Fatalf("first login sent code %q", codeSeen)
+	}
+
+	h.a.tl.mcs.code = "123456"
+	h.a.mcsSubmitCode()
+	h.waitFor("panel after two-factor", func() bool {
+		return !h.a.tl.mcs.codeOpen && len(h.a.tl.mcs.daemons) == 1 && len(h.a.tl.mcs.instances) == 1
+	})
+	if codeSeen != "123456" {
+		t.Fatalf("login code = %q", codeSeen)
+	}
+	h.mustHave("Node One", "Survival")
 }

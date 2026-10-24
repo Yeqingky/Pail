@@ -40,6 +40,12 @@ type mcsState struct {
 	folderName string
 	folderErr  string
 	folderBusy bool
+
+	codeOpen  bool
+	code      string
+	codeErr   string
+	codeBusy  bool
+	codeRetry func()
 }
 
 func (m *mcsState) daemonName() string {
@@ -60,9 +66,11 @@ func (m *mcsState) instanceName() string {
 	return m.instanceID
 }
 
-// mcsErrorText explains a panel access denial, which is usually about the API
-// key's account or the panel's API switch rather than the file being touched.
+// mcsErrorText explains a panel access denial or a missing second factor.
 func mcsErrorText(err error) string {
+	if errors.Is(err, core.ErrMCSNeed2FA) {
+		return locales.McsNeed2FA()
+	}
 	if core.KindOf(err) != core.ErrAccessDenied {
 		return humanError(err)
 	}
@@ -109,6 +117,10 @@ func (a *app) mcsLoadDaemons() {
 			}
 			m.loading = false
 			if err != nil {
+				if errors.Is(err, core.ErrMCSNeed2FA) {
+					a.mcsAskCode(a.mcsLoadDaemons)
+					return
+				}
 				m.err = mcsErrorText(err)
 				return
 			}
@@ -137,6 +149,10 @@ func (a *app) mcsLoadInstances() {
 			}
 			m.loading = false
 			if err != nil {
+				if errors.Is(err, core.ErrMCSNeed2FA) {
+					a.mcsAskCode(a.mcsLoadInstances)
+					return
+				}
 				m.err = mcsErrorText(err)
 				return
 			}
@@ -180,6 +196,10 @@ func (a *app) mcsFetchFiles(page int, appendRows bool) {
 			}
 			m.loading = false
 			if err != nil {
+				if errors.Is(err, core.ErrMCSNeed2FA) {
+					a.mcsAskCode(a.mcsLoadFiles)
+					return
+				}
 				m.err = mcsErrorText(err)
 				return
 			}
@@ -377,6 +397,7 @@ func (a *app) mcsView(c *ui.Context) {
 		}
 	})
 	a.mcsFolderDialog(c)
+	a.mcsCodeDialog(c)
 }
 
 // mcsDisplayPath shows the instance-relative path, with "/" for the root.
@@ -427,21 +448,31 @@ func (a *app) mcsPickUpload() {
 			return
 		}
 		a.post(func() {
-			a.bg(func() func() {
-				gid, err := a.svc.MCSUpload(a.ctx, acct, daemon, instance, dir, paths)
-				return func() {
-					if err != nil {
-						a.toast(locales.McsFailed(mcsErrorText(err)))
-						return
-					}
-					a.transfersOpen, a.transTab = true, 0
-					a.addWatch(gid, &watch{
-						kind: "mcs-upload", mcsAccount: acct, mcsDaemon: daemon, mcsInstance: instance,
-					})
-				}
-			})
+			a.mcsUpload(acct, daemon, instance, dir, paths)
 		})
 	}()
+}
+
+// mcsUpload queues the panel upload and asks for a two-factor code when the
+// panel needs one before it will sign in.
+func (a *app) mcsUpload(acct, daemon, instance, dir string, paths []string) {
+	a.bg(func() func() {
+		gid, err := a.svc.MCSUpload(a.ctx, acct, daemon, instance, dir, paths)
+		return func() {
+			if err != nil {
+				if errors.Is(err, core.ErrMCSNeed2FA) {
+					a.mcsAskCode(func() { a.mcsUpload(acct, daemon, instance, dir, paths) })
+					return
+				}
+				a.toast(locales.McsFailed(mcsErrorText(err)))
+				return
+			}
+			a.transfersOpen, a.transTab = true, 0
+			a.addWatch(gid, &watch{
+				kind: "mcs-upload", mcsAccount: acct, mcsDaemon: daemon, mcsInstance: instance,
+			})
+		}
+	})
 }
 
 func (a *app) mcsPickDownload() {
@@ -568,4 +599,69 @@ func joinMCSPath(dir, name string) string {
 		return "/" + name
 	}
 	return dir + "/" + name
+}
+
+// mcsAskCode asks for a two-factor code, then runs retry once the panel has
+// the code for its next sign-in.
+func (a *app) mcsAskCode(retry func()) {
+	m := &a.tl.mcs
+	m.codeOpen, m.code, m.codeErr, m.codeBusy = true, "", "", false
+	m.codeRetry = retry
+}
+
+func (a *app) mcsSubmitCode() {
+	m := &a.tl.mcs
+	if m.codeBusy {
+		return
+	}
+	code := strings.TrimSpace(m.code)
+	if code == "" {
+		m.codeErr = locales.McsCodeRequired()
+		return
+	}
+	acct := a.accountID
+	m.codeBusy, m.codeErr = true, ""
+	a.bg(func() func() {
+		err := a.svc.SetMCSLoginCode(a.ctx, acct, code)
+		return func() {
+			m.codeBusy = false
+			if err != nil {
+				m.codeErr = mcsErrorText(err)
+				return
+			}
+			retry := m.codeRetry
+			m.codeOpen, m.codeRetry = false, nil
+			if retry != nil {
+				retry()
+			}
+		}
+	})
+}
+
+func (a *app) mcsCodeDialog(c *ui.Context) {
+	m := &a.tl.mcs
+	if !m.codeOpen {
+		return
+	}
+	dialogW(c, &m.codeOpen, locales.McsCodeTitle(), 420, func() {
+		formField(c, locales.McsCodeTitle(), m.codeErr, func() {
+			in := inputBox(c, &m.code, locales.McsCodeTitle(), "", inputOpts{invalid: m.codeErr != "", focus: true})
+			if in.Submitted() {
+				a.mcsSubmitCode()
+			}
+			if in.Changed() {
+				m.codeErr = ""
+			}
+		})
+		mutedText(c, locales.McsCodeHelp())
+	}, func() {
+		buttonRow(c, func() {
+			if secondaryButton(c, locales.CommonCancel(), false).Clicked() {
+				m.codeOpen, m.codeRetry = false, nil
+			}
+			if primaryButton(c, locales.McsCodeSubmit(), m.codeBusy).Clicked() {
+				a.mcsSubmitCode()
+			}
+		})
+	})
 }

@@ -114,6 +114,11 @@ func (a *app) vaultPoll() {
 	}
 }
 
+// accountHasSecret reports whether ac stores a secret in the keychain or vault.
+func accountHasSecret(ac core.Account) bool {
+	return (ac.Credentials == core.CredStatic || ac.Credentials == core.CredAPIKey || ac.Credentials == core.CredPassword) && !ac.SecretMissing
+}
+
 // vaultAtStart asks for the master password when the vault is the backend, is
 // locked and an account needs a secret from it.
 func (a *app) vaultAtStart() {
@@ -122,7 +127,7 @@ func (a *app) vaultAtStart() {
 		return
 	}
 	for _, ac := range a.accounts {
-		if ac.Credentials == core.CredStatic && !ac.SecretMissing {
+		if accountHasSecret(ac) {
 			a.askUnlock("start", nil)
 			return
 		}
@@ -439,7 +444,7 @@ func (a *app) openReset() {
 	a.refreshVault()
 	r := resetState{open: true}
 	for _, ac := range a.accounts {
-		if ac.Credentials == core.CredStatic && !ac.SecretMissing {
+		if accountHasSecret(ac) {
 			r.accounts = append(r.accounts, ac.Name)
 		}
 	}

@@ -504,6 +504,16 @@ func (msgs Messages) AcctErrName() string {
 	return Catalog.Format(msgs.locale, "acctErrName", nil)
 }
 
+// AcctErrPassword says "Enter the password"
+// in the language the app shows.
+func AcctErrPassword() string { return In(i18n.Locale()).AcctErrPassword() }
+
+// AcctErrPassword says "Enter the password"
+// in the language of msgs.
+func (msgs Messages) AcctErrPassword() string {
+	return Catalog.Format(msgs.locale, "acctErrPassword", nil)
+}
+
 // AcctErrProfile says "Enter a profile name"
 // in the language the app shows.
 func AcctErrProfile() string { return In(i18n.Locale()).AcctErrProfile() }
@@ -544,6 +554,16 @@ func (msgs Messages) AcctErrSession() string {
 	return Catalog.Format(msgs.locale, "acctErrSession", nil)
 }
 
+// AcctErrUsername says "Enter the username"
+// in the language the app shows.
+func AcctErrUsername() string { return In(i18n.Locale()).AcctErrUsername() }
+
+// AcctErrUsername says "Enter the username"
+// in the language of msgs.
+func (msgs Messages) AcctErrUsername() string {
+	return Catalog.Format(msgs.locale, "acctErrUsername", nil)
+}
+
 // AcctExternalID says "External ID"
 // in the language the app shows.
 func AcctExternalID() string { return In(i18n.Locale()).AcctExternalID() }
@@ -572,6 +592,96 @@ func AcctKeepSecret() string { return In(i18n.Locale()).AcctKeepSecret() }
 // in the language of msgs.
 func (msgs Messages) AcctKeepSecret() string {
 	return Catalog.Format(msgs.locale, "acctKeepSecret", nil)
+}
+
+// AcctMCSAuth says "Sign-in method"
+// in the language the app shows.
+func AcctMCSAuth() string { return In(i18n.Locale()).AcctMCSAuth() }
+
+// AcctMCSAuth says "Sign-in method"
+// in the language of msgs.
+func (msgs Messages) AcctMCSAuth() string {
+	return Catalog.Format(msgs.locale, "acctMCSAuth", nil)
+}
+
+// AcctMCSAuthAPIKey says "API key"
+// in the language the app shows.
+func AcctMCSAuthAPIKey() string { return In(i18n.Locale()).AcctMCSAuthAPIKey() }
+
+// AcctMCSAuthAPIKey says "API key"
+// in the language of msgs.
+func (msgs Messages) AcctMCSAuthAPIKey() string {
+	return Catalog.Format(msgs.locale, "acctMCSAuthAPIKey", nil)
+}
+
+// AcctMCSAuthHelp says "An API key keeps working after a restart. Username and password keep a panel session and sign in again when it expires."
+// in the language the app shows.
+func AcctMCSAuthHelp() string { return In(i18n.Locale()).AcctMCSAuthHelp() }
+
+// AcctMCSAuthHelp says "An API key keeps working after a restart. Username and password keep a panel session and sign in again when it expires."
+// in the language of msgs.
+func (msgs Messages) AcctMCSAuthHelp() string {
+	return Catalog.Format(msgs.locale, "acctMCSAuthHelp", nil)
+}
+
+// AcctMCSAuthPassword says "Username and password"
+// in the language the app shows.
+func AcctMCSAuthPassword() string { return In(i18n.Locale()).AcctMCSAuthPassword() }
+
+// AcctMCSAuthPassword says "Username and password"
+// in the language of msgs.
+func (msgs Messages) AcctMCSAuthPassword() string {
+	return Catalog.Format(msgs.locale, "acctMCSAuthPassword", nil)
+}
+
+// AcctMCSCode says "Two-factor code"
+// in the language the app shows.
+func AcctMCSCode() string { return In(i18n.Locale()).AcctMCSCode() }
+
+// AcctMCSCode says "Two-factor code"
+// in the language of msgs.
+func (msgs Messages) AcctMCSCode() string {
+	return Catalog.Format(msgs.locale, "acctMCSCode", nil)
+}
+
+// AcctMCSCodeHelp says "Optional. Needed only when the panel asks for a one-time code for this sign-in."
+// in the language the app shows.
+func AcctMCSCodeHelp() string { return In(i18n.Locale()).AcctMCSCodeHelp() }
+
+// AcctMCSCodeHelp says "Optional. Needed only when the panel asks for a one-time code for this sign-in."
+// in the language of msgs.
+func (msgs Messages) AcctMCSCodeHelp() string {
+	return Catalog.Format(msgs.locale, "acctMCSCodeHelp", nil)
+}
+
+// AcctMCSNeed2FA says "This panel requires a two-factor code. Enter it and test the connection again."
+// in the language the app shows.
+func AcctMCSNeed2FA() string { return In(i18n.Locale()).AcctMCSNeed2FA() }
+
+// AcctMCSNeed2FA says "This panel requires a two-factor code. Enter it and test the connection again."
+// in the language of msgs.
+func (msgs Messages) AcctMCSNeed2FA() string {
+	return Catalog.Format(msgs.locale, "acctMCSNeed2FA", nil)
+}
+
+// AcctMCSPassword says "Password"
+// in the language the app shows.
+func AcctMCSPassword() string { return In(i18n.Locale()).AcctMCSPassword() }
+
+// AcctMCSPassword says "Password"
+// in the language of msgs.
+func (msgs Messages) AcctMCSPassword() string {
+	return Catalog.Format(msgs.locale, "acctMCSPassword", nil)
+}
+
+// AcctMCSUsername says "Username"
+// in the language the app shows.
+func AcctMCSUsername() string { return In(i18n.Locale()).AcctMCSUsername() }
+
+// AcctMCSUsername says "Username"
+// in the language of msgs.
+func (msgs Messages) AcctMCSUsername() string {
+	return Catalog.Format(msgs.locale, "acctMCSUsername", nil)
 }
 
 // AcctNamePlaceholder says "Production"
@@ -5750,6 +5860,56 @@ func McsAccessDenied() string { return In(i18n.Locale()).McsAccessDenied() }
 // in the language of msgs.
 func (msgs Messages) McsAccessDenied() string {
 	return Catalog.Format(msgs.locale, "mcsAccessDenied", nil)
+}
+
+// McsCodeHelp says "Enter the current code from your authenticator app."
+// in the language the app shows.
+func McsCodeHelp() string { return In(i18n.Locale()).McsCodeHelp() }
+
+// McsCodeHelp says "Enter the current code from your authenticator app."
+// in the language of msgs.
+func (msgs Messages) McsCodeHelp() string {
+	return Catalog.Format(msgs.locale, "mcsCodeHelp", nil)
+}
+
+// McsCodeRequired says "Enter the code"
+// in the language the app shows.
+func McsCodeRequired() string { return In(i18n.Locale()).McsCodeRequired() }
+
+// McsCodeRequired says "Enter the code"
+// in the language of msgs.
+func (msgs Messages) McsCodeRequired() string {
+	return Catalog.Format(msgs.locale, "mcsCodeRequired", nil)
+}
+
+// McsCodeSubmit says "Continue"
+// in the language the app shows.
+func McsCodeSubmit() string { return In(i18n.Locale()).McsCodeSubmit() }
+
+// McsCodeSubmit says "Continue"
+// in the language of msgs.
+func (msgs Messages) McsCodeSubmit() string {
+	return Catalog.Format(msgs.locale, "mcsCodeSubmit", nil)
+}
+
+// McsCodeTitle says "Two-factor code"
+// in the language the app shows.
+func McsCodeTitle() string { return In(i18n.Locale()).McsCodeTitle() }
+
+// McsCodeTitle says "Two-factor code"
+// in the language of msgs.
+func (msgs Messages) McsCodeTitle() string {
+	return Catalog.Format(msgs.locale, "mcsCodeTitle", nil)
+}
+
+// McsNeed2FA says "This panel requires a two-factor code before it can sign in."
+// in the language the app shows.
+func McsNeed2FA() string { return In(i18n.Locale()).McsNeed2FA() }
+
+// McsNeed2FA says "This panel requires a two-factor code before it can sign in."
+// in the language of msgs.
+func (msgs Messages) McsNeed2FA() string {
+	return Catalog.Format(msgs.locale, "mcsNeed2FA", nil)
 }
 
 // McsDeleteMessage says "The selected files and folders are deleted on the server. This cannot be undone."

@@ -3,12 +3,14 @@ package mcsmanager
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -351,5 +353,194 @@ func TestListFilesAlwaysSendsTheNameFilter(t *testing.T) {
 	}
 	if !q.Has("file_name") || q.Get("file_name") != "" {
 		t.Fatalf("file_name = %q, present = %v", q.Get("file_name"), q.Has("file_name"))
+	}
+}
+
+func TestPasswordLoginUsesCookieAndToken(t *testing.T) {
+	var loginBody map[string]string
+	var loginCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/login":
+			loginCalls++
+			if r.URL.Query().Get("apikey") != "" || r.URL.Query().Get("token") != "" {
+				t.Errorf("login query = %v", r.URL.RawQuery)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&loginBody); err != nil {
+				t.Errorf("login body: %v", err)
+			}
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "cookie-1", Path: "/"})
+			io.WriteString(w, `{"status":200,"data":"tok-1"}`)
+		case "/api/service/remote_services_list":
+			if r.URL.Query().Get("apikey") != "" {
+				t.Errorf("apikey was sent in password mode")
+			}
+			if r.URL.Query().Get("token") != "tok-1" {
+				t.Errorf("token = %q", r.URL.Query().Get("token"))
+			}
+			if c, err := r.Cookie("session"); err != nil || c.Value != "cookie-1" {
+				t.Errorf("cookie = %v, %v", c, err)
+			}
+			io.WriteString(w, `{"status":200,"data":[]}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(Config{Endpoint: srv.URL, Username: " alice ", Password: "pw", HTTPClient: srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ListDaemons(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if loginCalls != 1 || loginBody["username"] != "alice" || loginBody["password"] != "pw" {
+		t.Fatalf("logins = %d, body = %v", loginCalls, loginBody)
+	}
+}
+
+func TestPasswordLoginRetriesOnceAfterExpiry(t *testing.T) {
+	var logins, lists int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/login":
+			logins++
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "cookie-" + strconv.Itoa(logins), Path: "/"})
+			io.WriteString(w, `{"status":200,"data":"tok-`+strconv.Itoa(logins)+`"}`)
+		case "/api/service/remote_services_list":
+			lists++
+			if lists == 1 {
+				w.WriteHeader(http.StatusForbidden)
+				io.WriteString(w, `{"status":403,"data":"token error"}`)
+				return
+			}
+			if r.URL.Query().Get("token") != "tok-2" {
+				t.Errorf("retry token = %q", r.URL.Query().Get("token"))
+			}
+			if c, err := r.Cookie("session"); err != nil || c.Value != "cookie-2" {
+				t.Errorf("retry cookie = %v, %v", c, err)
+			}
+			io.WriteString(w, `{"status":200,"data":[]}`)
+		case "/api/auth/":
+			if lists == 1 {
+				w.WriteHeader(http.StatusForbidden)
+				io.WriteString(w, `{"status":403,"data":"token error"}`)
+				return
+			}
+			io.WriteString(w, `{"status":200,"data":{}}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(Config{Endpoint: srv.URL, Username: "alice", Password: "pw", HTTPClient: srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ListDaemons(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if logins != 2 || lists != 2 {
+		t.Fatalf("logins = %d, lists = %d", logins, lists)
+	}
+}
+
+func TestPasswordLoginNeeds2FA(t *testing.T) {
+	var codes []string
+	need2FA := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/login":
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			codes = append(codes, body["code"])
+			if need2FA && body["code"] == "" {
+				io.WriteString(w, `{"status":200,"data":"NEED_2FA"}`)
+				return
+			}
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "c", Path: "/"})
+			io.WriteString(w, `{"status":200,"data":"tok"}`)
+		case "/api/service/remote_services_list":
+			io.WriteString(w, `{"status":200,"data":[]}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(Config{Endpoint: srv.URL, Username: "alice", Password: "pw", HTTPClient: srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ListDaemons(context.Background()); !errors.Is(err, ErrNeed2FA) {
+		t.Fatalf("err = %v, want ErrNeed2FA", err)
+	}
+	c.SetLoginCode("123456")
+	if _, err := c.ListDaemons(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(codes) != 2 || codes[0] != "" || codes[1] != "123456" {
+		t.Fatalf("codes = %v", codes)
+	}
+}
+
+func TestPasswordPermissionDeniedDoesNotRelogin(t *testing.T) {
+	var logins int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/login":
+			logins++
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "cookie", Path: "/"})
+			io.WriteString(w, `{"status":200,"data":"tok"}`)
+		case "/api/service/remote_services_list":
+			w.WriteHeader(http.StatusForbidden)
+			io.WriteString(w, `{"status":403,"data":"权限不足"}`)
+		case "/api/auth/":
+			io.WriteString(w, `{"status":200,"data":{}}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(Config{Endpoint: srv.URL, Username: "alice", Password: "pw", HTTPClient: srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.ListDaemons(context.Background())
+	var ae *APIError
+	if !errors.As(err, &ae) || !ae.AccessDenied() {
+		t.Fatalf("err = %v, want a permission APIError", err)
+	}
+	if logins != 1 {
+		t.Fatalf("logins = %d, want 1", logins)
+	}
+}
+
+func TestPasswordDaemonUploadOmitsThePanelCookie(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/login":
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "panel-cookie", Path: "/"})
+			io.WriteString(w, `{"status":200,"data":"tok"}`)
+		case "/api/files/upload":
+			if c, err := r.Cookie("session"); err != nil || c.Value != "panel-cookie" {
+				t.Errorf("panel passport cookie = %v, %v", c, err)
+			}
+			io.WriteString(w, `{"status":200,"data":{"password":"pw","addr":"ws://`+r.Host+`"}}`)
+		case "/upload/pw":
+			if got := r.Header.Get("Cookie"); got != "" {
+				t.Errorf("daemon upload sent cookie %q", got)
+			}
+			io.WriteString(w, "OK")
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(Config{Endpoint: srv.URL, Username: "alice", Password: "pw", HTTPClient: srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := filepath.Join(t.TempDir(), "eula.txt")
+	if err := os.WriteFile(local, []byte("eula=true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Upload(context.Background(), "d1", "i1", "/", local, false, nil); err != nil {
+		t.Fatal(err)
 	}
 }

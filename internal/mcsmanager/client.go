@@ -1,7 +1,8 @@
 // Package mcsmanager talks to an MCSManager panel's HTTP API. It covers the
-// node and instance lists plus the file manager routes Pail uses; the panel's
-// API key travels in the apikey query parameter, so errors and logs never
-// include the request URL.
+// node and instance lists plus the file manager routes Pail uses. An API key
+// travels in the apikey query parameter; a username and password use the
+// panel session cookie plus its token parameter. Errors and logs never include
+// the request URL.
 package mcsmanager
 
 import (
@@ -15,6 +16,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path"
@@ -22,22 +24,33 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
-// Config describes one MCSManager panel.
+// Config describes one MCSManager panel. Use either APIKey or
+// Username/Password.
 type Config struct {
 	Endpoint           string
 	APIKey             string
+	Username           string
+	Password           string
+	Code               string // optional two-factor or verification code for the first login
 	InsecureSkipVerify bool
 	// HTTPClient overrides the transport (tests). When nil, NewHTTPClient is used.
 	HTTPClient *http.Client
 }
 
+// ErrNeed2FA means the panel asked for a one-time two-factor code before it
+// would create a session. Retry the login with Config.Code set.
+var ErrNeed2FA = errors.New("the panel requires a two-factor code")
+
 // NewHTTPClient returns a client with connection-level timeouts but no total
-// request timeout, so file transfers are not cut off.
+// request timeout, so file transfers are not cut off. It keeps cookies so a
+// password sign-in's session survives across requests.
 func NewHTTPClient(insecureSkipVerify bool) *http.Client {
-	return &http.Client{Transport: &http.Transport{
+	jar, _ := cookiejar.New(nil)
+	return &http.Client{Jar: jar, Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout:   10 * time.Second,
@@ -55,7 +68,15 @@ func NewHTTPClient(insecureSkipVerify bool) *http.Client {
 type Client struct {
 	base *url.URL
 	key  string
-	hc   *http.Client
+	user string
+	pass string
+	hc   *http.Client // panel requests: keeps the session cookie
+	dhc  *http.Client // daemon upload/download: no panel cookies
+
+	smu   sync.Mutex // serializes sign-in and guards token, gen and code
+	token string
+	gen   uint64
+	code  string // one-shot code for the next password sign-in
 }
 
 // New validates cfg and builds a client. No network traffic happens until the
@@ -67,14 +88,35 @@ func New(cfg Config) (*Client, error) {
 		return nil, errors.New("endpoint must be an http(s) URL without credentials, query or fragment")
 	}
 	key := strings.TrimSpace(cfg.APIKey)
-	if key == "" {
-		return nil, errors.New("an API key is required")
+	user := strings.TrimSpace(cfg.Username)
+	pass := cfg.Password
+	if key != "" && (user != "" || pass != "") {
+		return nil, errors.New("use either an API key or a username and password")
+	}
+	if key == "" && (user == "" || pass == "") {
+		return nil, errors.New("a username and password are required")
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
 		hc = NewHTTPClient(cfg.InsecureSkipVerify)
 	}
-	return &Client{base: base, key: key, hc: hc}, nil
+	if hc.Jar == nil {
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			return nil, err
+		}
+		hc = &http.Client{Transport: hc.Transport, CheckRedirect: hc.CheckRedirect, Timeout: hc.Timeout, Jar: jar}
+	}
+	dhc := &http.Client{Transport: hc.Transport, CheckRedirect: hc.CheckRedirect, Timeout: hc.Timeout}
+	return &Client{base: base, key: key, user: user, pass: pass, hc: hc, dhc: dhc, code: strings.TrimSpace(cfg.Code)}, nil
+}
+
+// SetLoginCode supplies the one-time two-factor code for the next password
+// sign-in. It is consumed even when the panel rejects it.
+func (c *Client) SetLoginCode(code string) {
+	c.smu.Lock()
+	c.code = strings.TrimSpace(code)
+	c.smu.Unlock()
 }
 
 // APIError is a panel answer that is not a success. HTTPStatus is the transport
@@ -94,9 +136,10 @@ func (e *APIError) Error() string {
 	return msg
 }
 
-// AccessDenied reports whether the panel said the API key lacks permission.
+// AccessDenied reports whether the panel said the credentials lack permission.
 func (e *APIError) AccessDenied() bool {
-	return e.HTTPStatus == http.StatusForbidden || e.Status == http.StatusForbidden
+	return e.HTTPStatus == http.StatusUnauthorized || e.HTTPStatus == http.StatusForbidden ||
+		e.Status == http.StatusUnauthorized || e.Status == http.StatusForbidden
 }
 
 // NotFound reports whether the panel said the resource does not exist.
@@ -110,14 +153,46 @@ type response struct {
 	Time   int64           `json:"time"`
 }
 
-// do performs one panel request. path starts with "/". out may be nil.
+// do performs one panel request. path starts with "/". out may be nil. With a
+// password account it signs in first and retries once after a session expires.
 func (c *Client) do(ctx context.Context, method, route string, q url.Values, body, out any) error {
+	if c.key == "" {
+		if err := c.ensureSession(ctx); err != nil {
+			return err
+		}
+	}
+	for attempt := 0; ; attempt++ {
+		token, gen := c.session()
+		err := c.doOnce(ctx, method, route, q, body, out, token)
+		if err == nil {
+			return nil
+		}
+		if c.key != "" || attempt > 0 || !authFailure(err) {
+			return err
+		}
+		valid, checkErr := c.sessionValid(ctx)
+		if checkErr == nil && valid {
+			return err // the session is fine; the route denied its permission
+		}
+		if err := c.relogin(ctx, gen); err != nil {
+			return err
+		}
+	}
+}
+
+// doOnce performs one request with the given session token.
+func (c *Client) doOnce(ctx context.Context, method, route string, q url.Values, body, out any, token string) error {
 	u := *c.base
 	u.Path = strings.TrimRight(c.base.Path, "/") + route
 	if q == nil {
 		q = url.Values{}
 	}
-	q.Set("apikey", c.key)
+	if c.key != "" {
+		q.Set("apikey", c.key)
+	} else {
+		q.Set("token", token)
+		q.Del("apikey")
+	}
 	u.RawQuery = q.Encode()
 
 	var rdr io.Reader
@@ -148,31 +223,7 @@ func (c *Client) do(ctx context.Context, method, route string, q url.Values, bod
 		_ = json.Unmarshal(raw, &r)
 	}
 	if res.StatusCode >= 400 || r.Status != 0 && r.Status != http.StatusOK {
-		msg := ""
-		// data often carries the reason on errors; keep it short.
-		var s string
-		if json.Unmarshal(r.Data, &s) == nil {
-			msg = s
-		}
-		if strings.TrimSpace(msg) == "" && len(raw) > 0 {
-			// The permission middleware answers with a plain localized
-			// string, and some routes use message or msg in a JSON body.
-			if json.Valid(raw) {
-				var e struct {
-					Message string `json:"message"`
-					Msg     string `json:"msg"`
-				}
-				_ = json.Unmarshal(raw, &e)
-				msg = strings.TrimSpace(e.Message)
-				if msg == "" {
-					msg = strings.TrimSpace(e.Msg)
-				}
-			}
-			if msg == "" {
-				msg = shortText(raw)
-			}
-		}
-		return &APIError{HTTPStatus: res.StatusCode, Status: r.Status, Message: msg}
+		return apiError(raw, r, res.StatusCode)
 	}
 	if out != nil {
 		if len(r.Data) == 0 || string(r.Data) == "null" {
@@ -182,6 +233,187 @@ func (c *Client) do(ctx context.Context, method, route string, q url.Values, bod
 			return fmt.Errorf("decode %s %s: %w", method, route, err)
 		}
 	}
+	return nil
+}
+
+// apiError turns a panel error answer into an APIError.
+func apiError(raw []byte, r response, httpStatus int) *APIError {
+	msg := ""
+	// data often carries the reason on errors; keep it short.
+	var s string
+	if json.Unmarshal(r.Data, &s) == nil {
+		msg = s
+	}
+	if strings.TrimSpace(msg) == "" && len(raw) > 0 {
+		// The permission middleware answers with a plain localized string,
+		// and some routes use message or msg in a JSON body.
+		if json.Valid(raw) {
+			var e struct {
+				Message string `json:"message"`
+				Msg     string `json:"msg"`
+			}
+			_ = json.Unmarshal(raw, &e)
+			msg = strings.TrimSpace(e.Message)
+			if msg == "" {
+				msg = strings.TrimSpace(e.Msg)
+			}
+		}
+		if msg == "" {
+			msg = shortText(raw)
+		}
+	}
+	return &APIError{HTTPStatus: httpStatus, Status: r.Status, Message: msg}
+}
+
+// authFailure reports whether err means the session is missing or expired.
+func authFailure(err error) bool {
+	var ae *APIError
+	return errors.As(err, &ae) && ae.AccessDenied()
+}
+
+// session returns the current token and its generation.
+func (c *Client) session() (string, uint64) {
+	c.smu.Lock()
+	defer c.smu.Unlock()
+	return c.token, c.gen
+}
+
+// ensureSession signs in once when no session exists yet.
+func (c *Client) ensureSession(ctx context.Context) error {
+	c.smu.Lock()
+	defer c.smu.Unlock()
+	if c.token != "" {
+		return nil
+	}
+	return c.loginLocked(ctx)
+}
+
+// sessionValid asks the account endpoint whether the current token and cookie
+// still belong to a session. A 403 from an ordinary route can mean either an
+// expired session or a permission the account does not have.
+func (c *Client) sessionValid(ctx context.Context) (bool, error) {
+	token, _ := c.session()
+	u := *c.base
+	u.Path = strings.TrimRight(c.base.Path, "/") + "/api/auth/"
+	q := url.Values{}
+	q.Set("token", token)
+	u.RawQuery = q.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	res, err := c.hc.Do(req)
+	if err != nil {
+		return false, redactURLError(err)
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return false, err
+	}
+	var r response
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &r)
+	}
+	return res.StatusCode == http.StatusOK && (r.Status == 0 || r.Status == http.StatusOK), nil
+}
+
+// relogin replaces an expired session. gen is the generation the caller saw;
+// when another request already refreshed it, this is a no-op.
+func (c *Client) relogin(ctx context.Context, gen uint64) error {
+	c.smu.Lock()
+	defer c.smu.Unlock()
+	if c.gen != gen && c.token != "" {
+		return nil
+	}
+	c.token = ""
+	return c.loginLocked(ctx)
+}
+
+// loginLocked signs in and stores the panel's token. The session cookie is
+// kept by the HTTP client's jar. The caller holds smu.
+func (c *Client) loginLocked(ctx context.Context) error {
+	body := map[string]string{"username": c.user, "password": c.pass}
+	if c.code != "" {
+		body["code"] = c.code
+	}
+	c.code = "" // one-shot, even when the panel rejects it
+	reqBody, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	u := *c.base
+	u.Path = strings.TrimRight(c.base.Path, "/") + "/api/auth/login"
+	u.RawQuery = ""
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(reqBody))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	res, err := c.hc.Do(req)
+	if err != nil {
+		return redactURLError(err)
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	var r response
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &r)
+	}
+	if res.StatusCode >= 400 || r.Status != 0 && r.Status != http.StatusOK {
+		return apiError(raw, r, res.StatusCode)
+	}
+	var value string
+	if json.Unmarshal(r.Data, &value) != nil || value == "" {
+		return errors.New("the panel returned no session token")
+	}
+	if value == "NEED_2FA" {
+		return ErrNeed2FA
+	}
+	if value == "Logined" {
+		return c.fetchTokenLocked(ctx)
+	}
+	c.token, c.gen = value, c.gen+1
+	return nil
+}
+
+// fetchTokenLocked asks the panel for the token of the session in the cookie
+// jar, for the rare "already logged in" answer to a login request.
+func (c *Client) fetchTokenLocked(ctx context.Context) error {
+	u := *c.base
+	u.Path = strings.TrimRight(c.base.Path, "/") + "/api/auth/token"
+	u.RawQuery = ""
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	res, err := c.hc.Do(req)
+	if err != nil {
+		return redactURLError(err)
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	var r response
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &r)
+	}
+	if res.StatusCode >= 400 || r.Status != 0 && r.Status != http.StatusOK {
+		return apiError(raw, r, res.StatusCode)
+	}
+	var token string
+	if json.Unmarshal(r.Data, &token) != nil || token == "" {
+		return errors.New("the panel returned no session token")
+	}
+	c.token, c.gen = token, c.gen+1
 	return nil
 }
 
@@ -569,7 +801,7 @@ func (c *Client) Download(ctx context.Context, p Passport, fileName string, w io
 	if err != nil {
 		return err
 	}
-	res, err := c.hc.Do(req)
+	res, err := c.dhc.Do(req)
 	if err != nil {
 		return redactURLError(err)
 	}
@@ -618,7 +850,7 @@ func (c *Client) Upload(ctx context.Context, daemonID, uuid, uploadDir, localPat
 		return err
 	}
 	req.Header.Set("Content-Type", ct)
-	res, err := c.hc.Do(req)
+	res, err := c.dhc.Do(req)
 	if err != nil {
 		return redactURLError(err)
 	}

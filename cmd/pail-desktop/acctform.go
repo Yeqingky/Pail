@@ -34,6 +34,9 @@ type acctForm struct {
 	session    string
 	profile    string
 
+	mcsAuth int    // mcsAuthAPIKey | mcsAuthPassword
+	mcsCode string // one-time code for the connection test; never saved
+
 	advanced   bool
 	roleARN    string
 	externalID string
@@ -62,6 +65,12 @@ const (
 	providerAWS = iota
 	providerS3
 	providerMCS
+)
+
+// Sign-in choices for MCSManager accounts.
+const (
+	mcsAuthAPIKey = iota
+	mcsAuthPassword
 )
 
 func (f *acctForm) busy() bool { return f.saving || f.test == testRunning }
@@ -110,7 +119,11 @@ func (a *app) openAccountForm(edit bool) {
 	f.name, f.endpoint, f.region, f.path = ac.Name, ac.Endpoint, ac.Region, ac.PathStyle
 	f.cdnURL, f.cdnBuckets = ac.CDNURL, strings.Join(ac.CDNBuckets, ", ")
 	f.creds, f.access, f.profile = ac.Credentials, ac.AccessKeyID, ac.Profile
-	f.hasSec = (ac.Credentials == core.CredStatic || ac.Credentials == core.CredAPIKey) && !ac.SecretMissing
+	f.mcsAuth = mcsAuthAPIKey
+	if ac.Credentials == core.CredPassword {
+		f.mcsAuth = mcsAuthPassword
+	}
+	f.hasSec = (ac.Credentials == core.CredStatic || ac.Credentials == core.CredAPIKey || ac.Credentials == core.CredPassword) && !ac.SecretMissing
 	f.missing = ac.SecretMissing
 	f.roleARN, f.externalID, f.roleName = ac.RoleARN, ac.ExternalID, ac.RoleSessionName
 	f.skipTLS = ac.InsecureSkipVerify
@@ -138,8 +151,18 @@ func (f *acctForm) fieldErrors() map[string]string {
 		}
 	}
 	if f.provider == providerMCS {
-		if f.secret == "" && !(f.editing != "" && f.hasSec) {
-			e["secret"] = locales.AcctErrAPIKey()
+		switch f.mcsAuth {
+		case mcsAuthPassword:
+			if strings.TrimSpace(f.access) == "" {
+				e["username"] = locales.AcctErrUsername()
+			}
+			if f.secret == "" && !(f.editing != "" && f.hasSec) {
+				e["password"] = locales.AcctErrPassword()
+			}
+		default:
+			if f.secret == "" && !(f.editing != "" && f.hasSec) {
+				e["secret"] = locales.AcctErrAPIKey()
+			}
 		}
 		return e
 	}
@@ -206,12 +229,19 @@ func (f *acctForm) build() (core.Account, *core.Secrets) {
 	}
 	if f.provider == providerMCS {
 		ac.Provider = core.ProviderMCS
-		ac.Credentials = core.CredAPIKey
 		ac.Endpoint = strings.TrimSpace(f.endpoint)
 		ac.Region, ac.PathStyle, ac.ChecksumMode = "", false, ""
 		ac.CDNURL, ac.CDNBuckets = "", nil
 		ac.AccessKeyID, ac.Profile = "", ""
 		ac.RoleARN, ac.ExternalID, ac.RoleSessionName = "", "", ""
+		ac.LoginCode = strings.TrimSpace(f.mcsCode)
+		if f.mcsAuth == mcsAuthPassword {
+			ac.Credentials = core.CredPassword
+			ac.AccessKeyID = strings.TrimSpace(f.access)
+		} else {
+			ac.Credentials = core.CredAPIKey
+			ac.LoginCode = ""
+		}
 		var sec *core.Secrets
 		if f.secret != "" {
 			sec = &core.Secrets{SecretAccessKey: f.secret}
@@ -264,8 +294,12 @@ func (a *app) testAccount() {
 						a.testAccount()
 					}
 				})
-				if ac.Provider == core.ProviderMCS && core.KindOf(err) == core.ErrAccessDenied {
-					msg = mcsErrorText(err)
+				if ac.Provider == core.ProviderMCS {
+					if errors.Is(err, core.ErrMCSNeed2FA) {
+						msg = locales.AcctMCSNeed2FA()
+					} else if core.KindOf(err) == core.ErrAccessDenied {
+						msg = mcsErrorText(err)
+					}
 				}
 				a.af.test, a.af.testMsg = testFailed, msg
 				return
@@ -381,13 +415,13 @@ func (a *app) accountDialog(c *ui.Context) {
 func (a *app) accountFields(c *ui.Context, errs map[string]string) {
 	f := &a.af
 	k := tk(c)
-	if f.missing && (f.creds == core.CredStatic || f.creds == core.CredAPIKey) {
+	if f.missing && (f.creds == core.CredStatic || f.creds == core.CredAPIKey || f.creds == core.CredPassword) {
 		warnNotice(c, locales.AcctSecretMissing())
 	}
 	formFieldHelp(c, locales.AcctProvider(), locales.AcctProviderHelp(), "", func() {
 		if segmented(c, &f.provider, locales.AcctProvider(), "AWS", locales.AcctS3Compatible(), locales.AcctProviderMcs()) {
-			f.test = testIdle
-			if f.provider != providerMCS && f.creds == core.CredAPIKey {
+			f.test, f.hasSec = testIdle, false
+			if f.provider != providerMCS && (f.creds == core.CredAPIKey || f.creds == core.CredPassword) {
 				f.creds = core.CredStatic
 			}
 		}
@@ -395,6 +429,13 @@ func (a *app) accountFields(c *ui.Context, errs map[string]string) {
 	formField(c, locales.CommonName(), errs["name"], func() {
 		inputBox(c, &f.name, locales.CommonName(), locales.AcctNamePlaceholder(), inputOpts{invalid: errs["name"] != "", focus: !f.missing})
 	})
+	if f.provider == providerMCS {
+		formFieldHelp(c, locales.AcctMCSAuth(), locales.AcctMCSAuthHelp(), "", func() {
+			if segmented(c, &f.mcsAuth, locales.AcctMCSAuth(), locales.AcctMCSAuthAPIKey(), locales.AcctMCSAuthPassword()) {
+				f.test, f.secret, f.mcsCode, f.hasSec = testIdle, "", "", false
+			}
+		})
+	}
 	if f.provider == providerS3 || f.provider == providerMCS {
 		formFieldHelp(c, locales.AcctEndpoint(), locales.AcctEndpointHelp(), errs["endpoint"], func() {
 			inputBox(c, &f.endpoint, locales.AcctEndpoint(), "https://s3.example.com", inputOpts{invalid: errs["endpoint"] != "", mono: true})
@@ -405,9 +446,22 @@ func (a *app) accountFields(c *ui.Context, errs map[string]string) {
 		if f.editing != "" && f.hasSec {
 			ph = locales.AcctKeepSecret()
 		}
-		formFieldHelp(c, locales.AcctAPIKey(), locales.AcctAPIKeyHelp(), errs["secret"], func() {
-			inputBox(c, &f.secret, locales.AcctAPIKey(), ph, inputOpts{invalid: errs["secret"] != "", password: true, focus: f.missing})
-		})
+		switch f.mcsAuth {
+		case mcsAuthPassword:
+			formFieldHelp(c, locales.AcctMCSUsername(), "", errs["username"], func() {
+				inputBox(c, &f.access, locales.AcctMCSUsername(), "", inputOpts{invalid: errs["username"] != "", mono: true})
+			})
+			formFieldHelp(c, locales.AcctMCSPassword(), "", errs["password"], func() {
+				inputBox(c, &f.secret, locales.AcctMCSPassword(), ph, inputOpts{invalid: errs["password"] != "", password: true, focus: f.missing})
+			})
+			formFieldHelp(c, locales.AcctMCSCode(), locales.AcctMCSCodeHelp(), "", func() {
+				inputBox(c, &f.mcsCode, locales.AcctMCSCode(), "", inputOpts{mono: true})
+			})
+		default:
+			formFieldHelp(c, locales.AcctAPIKey(), locales.AcctAPIKeyHelp(), errs["secret"], func() {
+				inputBox(c, &f.secret, locales.AcctAPIKey(), ph, inputOpts{invalid: errs["secret"] != "", password: true, focus: f.missing})
+			})
+		}
 		switchRowHelp(c, locales.AcctSkipTLS(), locales.AcctSkipTLSHelp(), &f.skipTLS)
 		return
 	}

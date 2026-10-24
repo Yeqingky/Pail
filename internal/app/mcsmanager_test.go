@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -354,5 +355,93 @@ func TestMCSFilesSendAnEmptyNameFilter(t *testing.T) {
 	}
 	if !hasFilter {
 		t.Fatal("file_name was omitted; the panel would filter for the literal \"undefined\"")
+	}
+}
+
+func TestMCSPasswordAccountSignsIn(t *testing.T) {
+	var loginBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/login":
+			if err := json.NewDecoder(r.Body).Decode(&loginBody); err != nil {
+				t.Errorf("login body: %v", err)
+			}
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "cookie", Path: "/"})
+			io.WriteString(w, `{"status":200,"data":"tok"}`)
+		case "/api/service/remote_services_list":
+			if r.URL.Query().Get("apikey") != "" {
+				t.Errorf("apikey was sent in password mode")
+			}
+			if r.URL.Query().Get("token") != "tok" {
+				t.Errorf("token = %q", r.URL.Query().Get("token"))
+			}
+			if c, err := r.Cookie("session"); err != nil || c.Value != "cookie" {
+				t.Errorf("cookie = %v, %v", c, err)
+			}
+			io.WriteString(w, `{"status":200,"data":[{"uuid":"d1","ip":"10.0.0.1","port":24444,"available":true,"remarks":"Node One"}]}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	s := newTestService(t, nil)
+	a, err := s.SaveAccount(Account{
+		Name: "panel", Provider: ProviderMCS, Endpoint: srv.URL, Credentials: CredPassword, AccessKeyID: "alice",
+	}, &Secrets{SecretAccessKey: "pw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Credentials != CredPassword || a.AccessKeyID != "alice" {
+		t.Fatalf("account = %+v", a)
+	}
+	ds, err := s.MCSDaemons(context.Background(), a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ds) != 1 || ds[0].Name != "Node One" {
+		t.Fatalf("daemons = %+v", ds)
+	}
+	if loginBody["username"] != "alice" || loginBody["password"] != "pw" {
+		t.Fatalf("login body = %v", loginBody)
+	}
+}
+
+func TestMCSLoginCodeUnblocksPasswordAccount(t *testing.T) {
+	need := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/login":
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if need && body["code"] == "" {
+				io.WriteString(w, `{"status":200,"data":"NEED_2FA"}`)
+				return
+			}
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "cookie", Path: "/"})
+			io.WriteString(w, `{"status":200,"data":"tok"}`)
+		case "/api/service/remote_services_list":
+			io.WriteString(w, `{"status":200,"data":[]}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	s := newTestService(t, nil)
+	a, err := s.SaveAccount(Account{
+		Name: "panel", Provider: ProviderMCS, Endpoint: srv.URL, Credentials: CredPassword, AccessKeyID: "alice",
+	}, &Secrets{SecretAccessKey: "pw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MCSDaemons(context.Background(), a.ID); !errors.Is(err, ErrMCSNeed2FA) {
+		t.Fatalf("err = %v, want ErrMCSNeed2FA", err)
+	}
+	if err := s.SetMCSLoginCode(context.Background(), a.ID, "123456"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MCSDaemons(context.Background(), a.ID); err != nil {
+		t.Fatal(err)
 	}
 }

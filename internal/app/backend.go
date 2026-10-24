@@ -217,8 +217,11 @@ func (mcsBackend) NormalizeAccount(a *Account) error {
 	if a.Endpoint == "" {
 		return errors.New("an MCSManager panel URL is required")
 	}
-	if a.Credentials != CredAPIKey {
-		return errors.New("MCSManager accounts use an API key")
+	if a.Credentials != CredAPIKey && a.Credentials != CredPassword {
+		return errors.New("MCSManager accounts use an API key or a username and password")
+	}
+	if a.Credentials == CredPassword && a.AccessKeyID == "" {
+		return errors.New("an MCSManager username is required")
 	}
 	if a.RoleARN != "" || a.ExternalID != "" || a.RoleSessionName != "" {
 		return errors.New("role settings do not apply to MCSManager")
@@ -233,11 +236,17 @@ func (mcsBackend) NormalizeAccount(a *Account) error {
 // keys that are not administrators but can still see their instances.
 func (mcsBackend) TestConnection(ctx context.Context, a Account, sec Secrets) error {
 	const op = "TestAccount"
-	c, err := mcsmanager.New(mcsmanager.Config{
+	cfg := mcsmanager.Config{
 		Endpoint:           a.Endpoint,
-		APIKey:             sec.SecretAccessKey,
+		Code:               a.LoginCode,
 		InsecureSkipVerify: a.InsecureSkipVerify,
-	})
+	}
+	if a.Credentials == CredPassword {
+		cfg.Username, cfg.Password = a.AccessKeyID, sec.SecretAccessKey
+	} else {
+		cfg.APIKey = sec.SecretAccessKey
+	}
+	c, err := mcsmanager.New(cfg)
 	if err != nil {
 		return invalid(op, "%v", err)
 	}

@@ -453,12 +453,13 @@ func (s *Service) Invalidations(ctx context.Context, accountID, distID string) (
 
 ## 10.1 MCSManager（`mcsmanager.go`、`internal/mcsmanager`）
 
-MCSManager 账户使用 `ProviderMCS` 和 `CredAPIKey`；`Endpoint` 是面板地址，API 密钥保存在钥匙串的 `Secrets.SecretAccessKey`。它们不是 S3 账户：`Location`、桶和对象键都不适用，文件用节点 ID、实例 UUID 和实例内绝对路径定位。
+MCSManager 账户使用 `ProviderMCS`，并以 `CredAPIKey` 或 `CredPassword` 登录；`Endpoint` 是面板地址。API Key 保存在钥匙串的 `Secrets.SecretAccessKey`；用户名密码模式把用户名放在 `Account.AccessKeyID`，密码放在 `Secrets.SecretAccessKey`。它们不是 S3 账户：`Location`、桶和对象键都不适用，文件用节点 ID、实例 UUID 和实例内绝对路径定位。
 
 ```go
 const (
-	ProviderMCS = "mcsmanager"
-	CredAPIKey  = "apikey"
+	ProviderMCS  = "mcsmanager"
+	CredAPIKey   = "apikey"
+	CredPassword = "password"
 )
 
 type MCSDaemon struct {
@@ -498,10 +499,12 @@ func (s *Service) MCSReadText(ctx context.Context, accountID, daemonID, uuid, ta
 func (s *Service) MCSWriteText(ctx context.Context, accountID, daemonID, uuid, target, text string) error
 func (s *Service) MCSDownload(ctx context.Context, accountID, daemonID, uuid, remotePath, destDir string) (string, error)
 func (s *Service) MCSUpload(ctx context.Context, accountID, daemonID, uuid, remoteDir string, localPaths []string) (string, error)
+func (s *Service) SetMCSLoginCode(ctx context.Context, accountID, code string) error
 ```
 
 - 每个方法先检查对应的 `mcs.*` 能力；MCSManager 账户不声明 S3 能力，S3 账户也不声明 `mcs.*`。
-- 面板请求把 API 密钥放在 `apikey` 查询参数；错误和日志不记录 URL。节点与实例列表需要管理员密钥；普通账户改由 `/api/auth?advanced=true` 读取分配给它的实例，按节点分组，节点名取备注或地址。面板拒绝请求时保留其文本说明（例如 API Key 未启用），界面在访问被拒时提示检查 API Key 与面板的 API 开关。
+- API Key 模式把密钥放在 `apikey` 查询参数。用户名密码模式先 `POST /api/auth/login`，之后每个请求同时带 session cookie 和与 cookie 对应的 `token` 查询参数，不能再带 `apikey`。面板会话过期时客户端用保存的密码自动重新登录一次；如果面板要求双重验证，返回 `ErrMCSNeed2FA`，界面弹出验证码输入框，`SetMCSLoginCode` 把一次性验证码交给下一次登录。`Account.LoginCode` 只用于连接测试，不写入 `accounts.json`。
+- 节点与实例列表需要管理员账户；普通账户改由 `/api/auth?advanced=true` 读取分配给它的实例，按节点分组，节点名取备注或地址。面板拒绝请求时保留其文本说明（例如 API Key 未启用），界面在访问被拒时提示检查凭据与面板的登录设置。
 - 文件路径始终是实例内相对路径（以 `/` 开头）。面板返回的 `absolutePath` 是守护进程主机路径，只用于展示或诊断，不能作为下一次请求的 `target`：守护进程会把它再接在实例根目录下，得到重复的绝对路径。
 - 文件列表的 `file_name` 过滤参数必须始终发送；空字符串表示不过滤。省略它会让面板把字面量 `undefined` 当作搜索词，从而隐藏所有文件。
 - 下载和上传使用面板签发的 one-time passport；下载写入临时文件后无覆盖发布，重名时使用编号名；上传发送 `overwrite=false`，由守护进程保留已有文件。面板可能把守护进程地址报告为 `ws://` 或 `wss://`（WebSocket 反向代理），上传和下载仍是 HTTP(S) 路由，客户端会转换为 `http://` 或 `https://`。

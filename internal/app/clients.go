@@ -45,6 +45,8 @@ func storageConfig(a Account, sec Secrets) storage.Config {
 		cfg.AccessKeyID, cfg.SecretAccessKey, cfg.SessionToken = a.AccessKeyID, sec.SecretAccessKey, sec.SessionToken
 	case CredAPIKey:
 		cfg.SecretAccessKey = sec.SecretAccessKey
+	case CredPassword:
+		cfg.AccessKeyID, cfg.SecretAccessKey = a.AccessKeyID, sec.SecretAccessKey
 	case CredProfile:
 		cfg.UseDefaultCredentials, cfg.Profile = true, a.Profile
 	case CredDefault:
@@ -191,11 +193,16 @@ func (s *Service) mcsClient(ctx context.Context, id string) (*mcsmanager.Client,
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.mc == nil {
-		c, err := mcsmanager.New(mcsmanager.Config{
+		cfg := mcsmanager.Config{
 			Endpoint:           e.acc.Endpoint,
-			APIKey:             e.cfg.SecretAccessKey,
 			InsecureSkipVerify: e.acc.InsecureSkipVerify,
-		})
+		}
+		if e.acc.Credentials == CredPassword {
+			cfg.Username, cfg.Password = e.acc.AccessKeyID, e.cfg.SecretAccessKey
+		} else {
+			cfg.APIKey = e.cfg.SecretAccessKey
+		}
+		c, err := mcsmanager.New(cfg)
 		if err != nil {
 			return nil, err
 		}

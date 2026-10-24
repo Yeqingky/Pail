@@ -558,3 +558,25 @@ func (s *Service) runMCSUpload(ctx context.Context, r *run, c *mcsmanager.Client
 	r.Item(ItemResult{Key: remotePath, Status: ItemSucceeded})
 	return nil
 }
+
+// ErrMCSNeed2FA reports that the panel requires a one-time code before it
+// creates a password session.
+var ErrMCSNeed2FA = mcsmanager.ErrNeed2FA
+
+// SetMCSLoginCode supplies the one-time code for the next password sign-in of
+// an account. The code is used and cleared by that sign-in.
+func (s *Service) SetMCSLoginCode(ctx context.Context, accountID, code string) error {
+	const op = "MCSLogin"
+	if strings.TrimSpace(code) == "" {
+		return invalid(op, "a two-factor code is required")
+	}
+	if err := s.requireCapability(op, accountID, CapMCSInstanceList); err != nil {
+		return err
+	}
+	c, err := s.mcsClient(ctx, accountID)
+	if err != nil {
+		return mapMCS(op, err)
+	}
+	c.SetLoginCode(code)
+	return nil
+}

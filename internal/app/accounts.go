@@ -139,6 +139,15 @@ func normalizeAccount(a Account) (Account, error) {
 		a.AccessKeyID, a.Profile = "", ""
 	case CredAPIKey:
 		a.AccessKeyID, a.Profile = "", ""
+	case CredPassword:
+		if a.Provider != ProviderMCS {
+			return a, errors.New("username and password are only for MCSManager accounts")
+		}
+		if strings.TrimSpace(a.AccessKeyID) == "" {
+			return a, errors.New("an MCSManager username is required")
+		}
+		a.AccessKeyID = strings.TrimSpace(a.AccessKeyID)
+		a.Profile = ""
 	default:
 		return a, fmt.Errorf("unknown credentials type %q", a.Credentials)
 	}
@@ -155,7 +164,9 @@ func normalizeAccount(a Account) (Account, error) {
 }
 
 // usesSecret reports whether creds store a value in the keyring.
-func usesSecret(creds string) bool { return creds == CredStatic || creds == CredAPIKey }
+func usesSecret(creds string) bool {
+	return creds == CredStatic || creds == CredAPIKey || creds == CredPassword
+}
 
 func validateSecrets(sec *Secrets) error {
 	if sec.SecretAccessKey == "" {
@@ -183,6 +194,7 @@ func (s *Service) SaveAccount(a Account, sec *Secrets) (Account, error) {
 	if err != nil {
 		return Account{}, invalid(op, "%v", err)
 	}
+	a.LoginCode = "" // one-time connection-test input, never stored
 	if sec != nil {
 		if !usesSecret(a.Credentials) {
 			return Account{}, invalid(op, "secrets can only be stored for credentials that use them")

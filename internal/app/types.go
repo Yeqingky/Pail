@@ -69,7 +69,7 @@ type Account struct {
 	Endpoint           string `json:"endpoint,omitempty"`
 	Region             string `json:"region,omitempty"`
 	PathStyle          bool   `json:"pathStyle,omitempty"`
-	Credentials        string `json:"credentials"` // "static" | "profile" | "default" | "anonymous" | "apikey"
+	Credentials        string `json:"credentials"` // "static" | "profile" | "default" | "anonymous" | "apikey" | "password"
 	AccessKeyID        string `json:"accessKeyId,omitempty"`
 	Profile            string `json:"profile,omitempty"`
 	RoleARN            string `json:"roleArn,omitempty"`
@@ -86,6 +86,9 @@ type Account struct {
 	// static account whose secret is not stored (after ResetVault). The UI asks
 	// the user to enter it again; SaveAccount with new secrets clears it.
 	SecretMissing bool `json:"-"`
+	// LoginCode is a one-time panel two-factor code for TestAccount and the
+	// first sign-in; it is never persisted.
+	LoginCode string `json:"-"`
 }
 
 // Account.Provider values.
@@ -105,10 +108,14 @@ const (
 	CredAnonymous = "anonymous"
 	// CredAPIKey stores the panel API key in Secrets.SecretAccessKey.
 	CredAPIKey = "apikey"
+	// CredPassword stores the MCSManager username in AccessKeyID and the
+	// password in Secrets.SecretAccessKey.
+	CredPassword = "password"
 )
 
 // Secrets are the keyring-backed parts of a credential. SecretAccessKey holds
-// the secret access key for CredStatic and the API key for CredAPIKey.
+// the secret access key for CredStatic, the API key for CredAPIKey and the
+// password for CredPassword.
 type Secrets struct{ SecretAccessKey, SessionToken string }
 
 // ---- browsing --------------------------------------------------------------
