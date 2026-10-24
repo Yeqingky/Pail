@@ -227,7 +227,7 @@ func switchRow(c *ui.Context, label string, on *bool) bool {
 }
 
 // emptyBlock is a centered empty state: 32px icon, 13px title, 12px subtitle.
-func emptyBlock(c *ui.Context, icon, title, sub string, height float32) {
+func emptyBlock(c *ui.Context, icon, title, sub string, height float32) ui.Element {
 	k := tk(c)
 	col := ui.Column(c).Center().Gap(4)
 	if height > 0 {
@@ -242,4 +242,5 @@ func emptyBlock(c *ui.Context, icon, title, sub string, height float32) {
 			ui.Text(c, sub).FontSize(sizeSecondary).TextColor(k.TextMuted).TextAlign(ui.Center)
 		}
 	})
+	return col
 }

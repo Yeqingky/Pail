@@ -41,6 +41,14 @@ type mcsState struct {
 	folderErr  string
 	folderBusy bool
 
+	renameOpen bool
+	renamePath string
+	renameName string
+	renameErr  string
+	renameBusy bool
+
+	rowRects map[string]ui.Rect
+
 	codeOpen  bool
 	code      string
 	codeErr   string
@@ -354,18 +362,26 @@ func (a *app) mcsView(c *ui.Context) {
 		case len(m.instances) == 0:
 			emptyBlock(c, "server", locales.McsNoInstances(), "", 0)
 		case len(m.files) == 0:
-			emptyBlock(c, "folder", locales.McsNoFiles(), "", 0)
+			empty := emptyBlock(c, "folder", locales.McsNoFiles(), "", 0)
+			a.contextMenu(empty, menuSpec{name: locales.McsMenuActions()}, func(mb *menuBuilder) {
+				m.sel.Clear()
+				m.cursor = -1
+				a.buildMCSMenu(mb)
+			})
 		default:
 			files := m.files
 			m.list.Key = func(i int) any { return files[i].Path }
 			m.list.Label = func(i int) string { return files[i].Name }
 			m.list.Selection = &m.sel
 			m.list.Selected = &m.cursor
+			m.list.DragSelect = true
+			m.rowRects = make(map[string]ui.Rect, len(files))
 			tbl := toolTable(c, &m.list, mcsColumns(), len(files), func(row, col int) {
 				f := &files[row]
 				switch col {
 				case 0:
-					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+					cell := ui.Row(c).Gap(6).AlignItems(ui.Center)
+					cell.Children(func() {
 						ic := "file"
 						if f.Folder {
 							ic = "folder"
@@ -373,6 +389,7 @@ func (a *app) mcsView(c *ui.Context) {
 						ui.Icon(c, icons.Get(ic)).FontSize(14).TextColor(k.TextMuted)
 						ui.Text(c, f.Name).FontSize(sizeSecondary).TextColor(k.Text).SingleLine().Grow(1).MinWidth(0)
 					})
+					m.rowRects[f.Path] = cell.Bounds()
 				case 1:
 					if !f.Folder {
 						secondaryCell(c, humanBytes(f.Size), true, ui.End)
@@ -384,6 +401,26 @@ func (a *app) mcsView(c *ui.Context) {
 				}
 			})
 			tbl.Grow(1).MinHeight(0).Label(locales.McsTableLabel())
+			a.contextMenu(tbl, menuSpec{name: locales.McsMenuActions(), keyAt: a.mcsCursorCorner}, func(mb *menuBuilder) {
+				if !mb.keyboard {
+					if path, ok := m.rowAtPointer(tbl); ok {
+						if !m.sel.Has(path) {
+							m.sel.Clear()
+							m.sel.Add(path)
+							for i := range m.files {
+								if m.files[i].Path == path {
+									m.cursor = i
+									break
+								}
+							}
+						}
+					} else {
+						m.sel.Clear()
+						m.cursor = -1
+					}
+				}
+				a.buildMCSMenu(mb)
+			})
 			if tbl.Submitted() && m.cursor >= 0 && m.cursor < len(files) {
 				a.mcsOpen(files[m.cursor])
 			}
@@ -397,6 +434,7 @@ func (a *app) mcsView(c *ui.Context) {
 		}
 	})
 	a.mcsFolderDialog(c)
+	a.mcsRenameDialog(c)
 	a.mcsCodeDialog(c)
 }
 
@@ -663,5 +701,182 @@ func (a *app) mcsCodeDialog(c *ui.Context) {
 				a.mcsSubmitCode()
 			}
 		})
+	})
+}
+
+// rowAtPointer returns the file row under the pointer, if any.
+func (m *mcsState) rowAtPointer(tbl ui.Element) (string, bool) {
+	_, py, over := tbl.PointerPosition()
+	if !over {
+		return "", false
+	}
+	b := tbl.Bounds()
+	for path, r := range m.rowRects {
+		y := r.Y - b.Y
+		if py >= y && py < y+r.H {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+// mcsCursorCorner is where Shift+F10 opens the file menu: below the name of
+// the row the keyboard is on.
+func (a *app) mcsCursorCorner() (x, y float32, ok bool) {
+	m := &a.tl.mcs
+	if m.cursor < 0 || m.cursor >= len(m.files) {
+		return 0, 0, false
+	}
+	r, ok := m.rowRects[m.files[m.cursor].Path]
+	if !ok || r.W <= 0 {
+		return 0, 0, false
+	}
+	return r.X, r.Y + r.H, true
+}
+
+// singleSelected returns the one selected file, or nil.
+func (m *mcsState) singleSelected() (*core.MCSFile, bool) {
+	if m.sel.Len() != 1 {
+		return nil, false
+	}
+	for i := range m.files {
+		if m.sel.Has(m.files[i].Path) {
+			return &m.files[i], true
+		}
+	}
+	return nil, false
+}
+
+func (a *app) mcsSelectAll() {
+	m := &a.tl.mcs
+	for _, f := range m.files {
+		m.sel.Add(f.Path)
+	}
+	if len(m.files) > 0 {
+		m.cursor = len(m.files) - 1
+	}
+}
+
+// buildMCSMenu fills the file table's context menu.
+func (a *app) buildMCSMenu(mb *menuBuilder) {
+	m := &a.tl.mcs
+	one, hasOne := m.singleSelected()
+
+	open := mb.Item(locales.CmdOpen(), func() {
+		if f, ok := m.singleSelected(); ok {
+			a.mcsOpen(*f)
+		}
+	}).Icon("folder-open")
+	open.Disabled(!hasOne || !one.Folder)
+
+	down := mb.Item(locales.CmdDownload(), a.mcsPickDownload).Icon("download")
+	down.Disabled(a.mcsSingleFile() == nil)
+
+	ren := mb.Item(locales.CmdRename(), a.mcsAskRename).Icon("pencil")
+	ren.Disabled(!hasOne)
+
+	cp := mb.Item(locales.McsCopyPath(), func() {
+		if f, ok := m.singleSelected(); ok {
+			a.copyText(f.Path)
+			a.toast(locales.McsPathCopied())
+		}
+	}).Icon("link")
+	cp.Disabled(!hasOne)
+
+	mb.Separator()
+	mb.Item(locales.CmdUploadFiles(), a.mcsPickUpload).Icon("upload")
+	mb.Item(locales.CmdNewFolder(), func() {
+		m.folderOpen, m.folderName, m.folderErr = true, "", ""
+	}).Icon("folder-plus")
+
+	mb.Separator()
+	del := mb.Item(locales.CommonDelete(), a.mcsAskDelete).Icon("trash-2")
+	del.Disabled(m.sel.Len() == 0)
+
+	mb.Separator()
+	mb.Item(locales.CommonRefresh(), a.mcsLoadFiles).Icon("refresh-cw")
+	mb.Item(locales.CmdSelectAll(), a.mcsSelectAll).Icon("check-square")
+}
+
+func (a *app) mcsAskRename() {
+	m := &a.tl.mcs
+	f, ok := m.singleSelected()
+	if !ok {
+		return
+	}
+	m.renameOpen, m.renamePath, m.renameName, m.renameErr = true, f.Path, f.Name, ""
+}
+
+func (a *app) mcsRenameDialog(c *ui.Context) {
+	m := &a.tl.mcs
+	if !m.renameOpen {
+		return
+	}
+	dialogW(c, &m.renameOpen, locales.McsRenameTitle(), 400, func() {
+		formField(c, locales.McsRenameName(), m.renameErr, func() {
+			in := inputBox(c, &m.renameName, locales.McsRenameName(), "", inputOpts{invalid: m.renameErr != "", focus: true})
+			if in.Submitted() {
+				a.mcsRename()
+			}
+			if in.Changed() {
+				m.renameErr = ""
+			}
+		})
+	}, func() {
+		buttonRow(c, func() {
+			if secondaryButton(c, locales.CommonCancel(), false).Clicked() {
+				m.renameOpen = false
+			}
+			if primaryButton(c, locales.CmdRename(), m.renameBusy).Clicked() {
+				a.mcsRename()
+			}
+		})
+	})
+}
+
+func (a *app) mcsRename() {
+	m := &a.tl.mcs
+	if m.renameBusy || m.instanceID == "" {
+		return
+	}
+	name := strings.TrimSpace(m.renameName)
+	switch {
+	case name == "":
+		m.renameErr = locales.McsFolderNameRequired()
+		return
+	case strings.ContainsAny(name, "/\\") || name == "." || name == "..":
+		m.renameErr = locales.McsFolderNameRequired()
+		return
+	}
+	old := m.renamePath
+	dest := joinMCSPath(mcsParent(old), name)
+	if dest == old {
+		m.renameOpen = false
+		return
+	}
+	for _, f := range m.files {
+		if f.Path == dest {
+			m.renameErr = locales.McsNameExists()
+			return
+		}
+	}
+	acct, daemon, instance := a.accountID, m.daemonID, m.instanceID
+	m.renameBusy, m.renameErr = true, ""
+	a.bg(func() func() {
+		err := a.svc.MCSMove(a.ctx, acct, daemon, instance, [][2]string{{old, dest}})
+		return func() {
+			m.renameBusy = false
+			if err != nil {
+				if errors.Is(err, core.ErrMCSNeed2FA) {
+					a.mcsAskCode(a.mcsRename)
+					return
+				}
+				m.renameErr = mcsErrorText(err)
+				return
+			}
+			m.renameOpen = false
+			a.toast(locales.McsRenamed(name))
+			a.mcsLoadFiles()
+		}
 	})
 }

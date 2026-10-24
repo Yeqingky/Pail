@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	core "github.com/DejavuMoe/Pail/internal/app"
@@ -303,4 +304,98 @@ func TestMCSMToolPromptsForTwoFactorCode(t *testing.T) {
 		t.Fatalf("login code = %q", codeSeen)
 	}
 	h.mustHave("Node One", "Survival")
+}
+
+func TestMCSMToolDragSelectAndContextMenu(t *testing.T) {
+	var mu sync.Mutex
+	var moved [][2]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/service/remote_services_list":
+			io.WriteString(w, `{"status":200,"data":[{"uuid":"d1","ip":"10.0.0.1","port":24444,"available":true,"remarks":"Node One"}]}`)
+		case "/api/service/remote_service_instances":
+			io.WriteString(w, `{"status":200,"data":{"page":1,"pageSize":10,"maxPage":1,"data":[{"instanceUuid":"i1","status":3,"config":{"nickname":"Survival"}}]}}`)
+		case "/api/files/list":
+			io.WriteString(w, `{"status":200,"data":{"items":[
+				{"name":"world","size":0,"time":"Fri Jun 07 2024 08:53:34 GMT+0800","mode":755,"type":0},
+				{"name":"server.jar","size":42,"time":"Thu Jun 06 2024 18:25:14 GMT+0800","mode":644,"type":1}],
+				"page":0,"pageSize":100,"total":2,"absolutePath":"/opt/mcsmanager/daemon/data/InstanceData/i1/"}}`)
+		case "/api/files/move":
+			var body struct {
+				Targets [][2]string `json:"targets"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			moved = body.Targets
+			mu.Unlock()
+			io.WriteString(w, `{"status":200,"data":true}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	h := newHarness(t, "light")
+	acct, err := h.env.Svc.SaveAccount(core.Account{
+		Name: "Panel", Provider: core.ProviderMCS, Endpoint: srv.URL, Credentials: core.CredAPIKey,
+	}, &core.Secrets{SecretAccessKey: "panel-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.a.refreshAccounts()
+	h.a.selectAccount(acct.ID)
+	h.waitFor("MCSManager files", func() bool {
+		return len(h.a.tl.mcs.files) == 2 && !h.a.tl.mcs.loading
+	})
+	h.settle()
+
+	r1, ok := h.tt.Find("world")
+	if !ok {
+		t.Fatal("no world row")
+	}
+	r2, ok := h.tt.Find("server.jar")
+	if !ok {
+		t.Fatal("no server row")
+	}
+	x1, y1 := r1.X+r1.W/2, r1.Y+r1.H/2
+	x2, y2 := r2.X+r2.W/2, r2.Y+r2.H/2
+	h.tt.Press(x1, y1)
+	h.tt.Move(x1, y1+3)
+	h.tt.Move(x2, y2)
+	h.tt.Release(x2, y2)
+	h.settle()
+	if !h.a.tl.mcs.sel.Has("/world") || !h.a.tl.mcs.sel.Has("/server.jar") {
+		t.Fatalf("drag selected %d rows, want both", h.a.tl.mcs.sel.Len())
+	}
+
+	if err := h.tt.Click("server.jar"); err != nil {
+		t.Fatal(err)
+	}
+	h.settle()
+	if err := h.tt.RightClick("server.jar"); err != nil {
+		t.Fatal(err)
+	}
+	h.settle()
+	h.mustHave("Open", "Download", "Rename", "Copy path", "Upload files…", "New folder", "Delete", "Refresh", "Select all")
+
+	h.mustClick("Rename")
+	h.settle()
+	if !h.a.tl.mcs.renameOpen {
+		t.Fatal("Rename did not open the dialog")
+	}
+	h.mustHave("Name")
+	h.a.tl.mcs.renameName = "renamed.bin"
+	h.a.mcsRename()
+	h.waitFor("MCS rename", func() bool {
+		mu.Lock()
+		n := len(moved)
+		mu.Unlock()
+		return n == 1 && !h.a.tl.mcs.renameBusy
+	})
+	mu.Lock()
+	got := moved
+	mu.Unlock()
+	if len(got) != 1 || got[0] != [2]string{"/server.jar", "/renamed.bin"} {
+		t.Fatalf("move targets = %v", got)
+	}
 }

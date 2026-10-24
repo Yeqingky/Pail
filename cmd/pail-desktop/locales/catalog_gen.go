@@ -5912,6 +5912,16 @@ func (msgs Messages) McsNeed2FA() string {
 	return Catalog.Format(msgs.locale, "mcsNeed2FA", nil)
 }
 
+// McsCopyPath says "Copy path"
+// in the language the app shows.
+func McsCopyPath() string { return In(i18n.Locale()).McsCopyPath() }
+
+// McsCopyPath says "Copy path"
+// in the language of msgs.
+func (msgs Messages) McsCopyPath() string {
+	return Catalog.Format(msgs.locale, "mcsCopyPath", nil)
+}
+
 // McsDeleteMessage says "The selected files and folders are deleted on the server. This cannot be undone."
 // in the language the app shows.
 func McsDeleteMessage() string { return In(i18n.Locale()).McsDeleteMessage() }
@@ -6032,6 +6042,26 @@ func (msgs Messages) McsMode() string {
 	return Catalog.Format(msgs.locale, "mcsMode", nil)
 }
 
+// McsMenuActions says "Item actions"
+// in the language the app shows.
+func McsMenuActions() string { return In(i18n.Locale()).McsMenuActions() }
+
+// McsMenuActions says "Item actions"
+// in the language of msgs.
+func (msgs Messages) McsMenuActions() string {
+	return Catalog.Format(msgs.locale, "mcsMenuActions", nil)
+}
+
+// McsNameExists says "An item with this name already exists"
+// in the language the app shows.
+func McsNameExists() string { return In(i18n.Locale()).McsNameExists() }
+
+// McsNameExists says "An item with this name already exists"
+// in the language of msgs.
+func (msgs Messages) McsNameExists() string {
+	return Catalog.Format(msgs.locale, "mcsNameExists", nil)
+}
+
 // McsNewFolderTitle says "New folder"
 // in the language the app shows.
 func McsNewFolderTitle() string { return In(i18n.Locale()).McsNewFolderTitle() }
@@ -6080,6 +6110,46 @@ func McsNode() string { return In(i18n.Locale()).McsNode() }
 // in the language of msgs.
 func (msgs Messages) McsNode() string {
 	return Catalog.Format(msgs.locale, "mcsNode", nil)
+}
+
+// McsPathCopied says "Path copied"
+// in the language the app shows.
+func McsPathCopied() string { return In(i18n.Locale()).McsPathCopied() }
+
+// McsPathCopied says "Path copied"
+// in the language of msgs.
+func (msgs Messages) McsPathCopied() string {
+	return Catalog.Format(msgs.locale, "mcsPathCopied", nil)
+}
+
+// McsRenameName says "Name"
+// in the language the app shows.
+func McsRenameName() string { return In(i18n.Locale()).McsRenameName() }
+
+// McsRenameName says "Name"
+// in the language of msgs.
+func (msgs Messages) McsRenameName() string {
+	return Catalog.Format(msgs.locale, "mcsRenameName", nil)
+}
+
+// McsRenameTitle says "Rename"
+// in the language the app shows.
+func McsRenameTitle() string { return In(i18n.Locale()).McsRenameTitle() }
+
+// McsRenameTitle says "Rename"
+// in the language of msgs.
+func (msgs Messages) McsRenameTitle() string {
+	return Catalog.Format(msgs.locale, "mcsRenameTitle", nil)
+}
+
+// McsRenamed says "Renamed to {name}"
+// in the language the app shows.
+func McsRenamed(name string) string { return In(i18n.Locale()).McsRenamed(name) }
+
+// McsRenamed says "Renamed to {name}"
+// in the language of msgs.
+func (msgs Messages) McsRenamed(name string) string {
+	return Catalog.Format(msgs.locale, "mcsRenamed", map[string]any{"name": name})
 }
 
 // McsTableLabel says "Instance files"
