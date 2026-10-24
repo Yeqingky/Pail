@@ -1,6 +1,7 @@
 package mcsmanager
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -209,6 +210,9 @@ func TestUploadStreamsMultipart(t *testing.T) {
 				t.Errorf("upload_dir = %q", r.URL.Query().Get("upload_dir"))
 			}
 			io.WriteString(w, `{"status":200,"data":{"password":"pw","addr":"ws://`+r.Host+`"}}`)
+		case "/upload-new/pw":
+			w.WriteHeader(http.StatusNotFound)
+			io.WriteString(w, `[404] Not Found`)
 		case "/upload/pw":
 			overwrite = r.URL.Query().Get("overwrite")
 			if err := r.ParseMultipartForm(1 << 20); err != nil {
@@ -522,10 +526,16 @@ func TestPasswordDaemonUploadOmitsThePanelCookie(t *testing.T) {
 				t.Errorf("panel passport cookie = %v, %v", c, err)
 			}
 			io.WriteString(w, `{"status":200,"data":{"password":"pw","addr":"ws://`+r.Host+`"}}`)
-		case "/upload/pw":
+		case "/upload-new/pw":
 			if got := r.Header.Get("Cookie"); got != "" {
-				t.Errorf("daemon upload sent cookie %q", got)
+				t.Errorf("daemon init sent cookie %q", got)
 			}
+			io.WriteString(w, `{"data":{"id":"u1","received":[]},"status":200}`)
+		case "/upload-piece/u1":
+			if got := r.Header.Get("Cookie"); got != "" {
+				t.Errorf("daemon piece sent cookie %q", got)
+			}
+			_, _ = io.Copy(io.Discard, r.Body)
 			io.WriteString(w, "OK")
 		default:
 			t.Errorf("unexpected path %q", r.URL.Path)
@@ -542,5 +552,108 @@ func TestPasswordDaemonUploadOmitsThePanelCookie(t *testing.T) {
 	}
 	if err := c.Upload(context.Background(), "d1", "i1", "/", local, false, nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestUploadSendsPieces(t *testing.T) {
+	size := 3*uploadPieceSize + 123
+	data := bytes.Repeat([]byte("x"), size)
+	dir := t.TempDir()
+	local := filepath.Join(dir, "big.bin")
+	if err := os.WriteFile(local, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var offsets []int64
+	var got bytes.Buffer
+	var lastProgress int64
+	c, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/files/upload":
+			io.WriteString(w, `{"status":200,"data":{"password":"pw","addr":"ws://`+r.Host+`"}}`)
+		case r.URL.Path == "/upload-new/pw":
+			q := r.URL.Query()
+			if q.Get("filename") != "big.bin" || q.Get("size") != strconv.Itoa(size) || q.Get("overwrite") != "false" {
+				t.Errorf("init query = %v", q)
+			}
+			io.WriteString(w, `{"data":{"id":"u1","received":[]},"status":200}`)
+		case r.URL.Path == "/upload-piece/u1":
+			off, _ := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
+			offsets = append(offsets, off)
+			f, _, err := r.FormFile("file")
+			if err != nil {
+				t.Errorf("piece: %v", err)
+				return
+			}
+			defer f.Close()
+			if _, err := io.Copy(&got, f); err != nil {
+				t.Errorf("piece read: %v", err)
+			}
+			io.WriteString(w, "OK")
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	})
+	if err := c.Upload(context.Background(), "d1", "i1", "/srv", local, false, func(n int64) { lastProgress = n }); err != nil {
+		t.Fatal(err)
+	}
+	wantOffsets := []int64{0, uploadPieceSize, 2 * uploadPieceSize, 3 * uploadPieceSize}
+	if len(offsets) != len(wantOffsets) {
+		t.Fatalf("offsets = %v, want %v", offsets, wantOffsets)
+	}
+	for i := range wantOffsets {
+		if offsets[i] != wantOffsets[i] {
+			t.Fatalf("offsets = %v, want %v", offsets, wantOffsets)
+		}
+	}
+	if got.Len() != size || !bytes.Equal(got.Bytes(), data) {
+		t.Fatalf("uploaded %d bytes, want %d", got.Len(), size)
+	}
+	if lastProgress != int64(size) {
+		t.Fatalf("progress = %d, want %d", lastProgress, size)
+	}
+}
+
+func TestUploadSplitsPiecesAfter413(t *testing.T) {
+	size := 512 << 10
+	data := bytes.Repeat([]byte("y"), size)
+	dir := t.TempDir()
+	local := filepath.Join(dir, "big.bin")
+	if err := os.WriteFile(local, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var accepted bytes.Buffer
+	var lastProgress int64
+	c, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/files/upload":
+			io.WriteString(w, `{"status":200,"data":{"password":"pw","addr":"ws://`+r.Host+`"}}`)
+		case r.URL.Path == "/upload-new/pw":
+			io.WriteString(w, `{"data":{"id":"u1","received":[]},"status":200}`)
+		case r.URL.Path == "/upload-piece/u1":
+			f, _, err := r.FormFile("file")
+			if err != nil {
+				t.Errorf("piece: %v", err)
+				return
+			}
+			defer f.Close()
+			b, _ := io.ReadAll(f)
+			if len(b) > 128<<10 {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			accepted.Write(b)
+			io.WriteString(w, "OK")
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	})
+	if err := c.Upload(context.Background(), "d1", "i1", "/srv", local, false, func(n int64) { lastProgress = n }); err != nil {
+		t.Fatal(err)
+	}
+	if accepted.Len() != size || !bytes.Equal(accepted.Bytes(), data) {
+		t.Fatalf("accepted %d bytes, want %d", accepted.Len(), size)
+	}
+	if lastProgress != int64(size) {
+		t.Fatalf("progress = %d, want %d", lastProgress, size)
 	}
 }

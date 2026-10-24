@@ -116,10 +116,12 @@ func TestMCSUploadQueuesTasks(t *testing.T) {
 				t.Errorf("upload_dir = %q", r.URL.Query().Get("upload_dir"))
 			}
 			json.NewEncoder(w).Encode(map[string]any{"status": 200, "data": map[string]string{"password": "pw", "addr": "ws://" + r.Host}})
-		case r.URL.Path == "/upload/pw":
-			if r.URL.Query().Get("overwrite") != "false" {
-				t.Errorf("overwrite = %q", r.URL.Query().Get("overwrite"))
+		case r.URL.Path == "/upload-new/pw":
+			if r.URL.Query().Get("filename") != "server.properties" || r.URL.Query().Get("size") != "10" || r.URL.Query().Get("overwrite") != "false" {
+				t.Errorf("init query = %v", r.URL.Query())
 			}
+			io.WriteString(w, `{"data":{"id":"u1","received":[]},"status":200}`)
+		case r.URL.Path == "/upload-piece/u1":
 			f, h, err := r.FormFile("file")
 			if err != nil {
 				t.Errorf("file field: %v", err)

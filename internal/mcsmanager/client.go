@@ -816,32 +816,140 @@ func (c *Client) Download(ctx context.Context, p Passport, fileName string, w io
 // Upload posts one local file to uploadDir. overwrite=false lets the daemon
 // keep an existing file under a new name. progress, when not nil, receives the
 // number of file bytes read so far.
+//
+// The daemon's current upload API takes 2 MiB pieces; using it keeps every
+// request below reverse-proxy body limits. Older daemons without /upload-new
+// fall back to the single multipart request.
 func (c *Client) Upload(ctx context.Context, daemonID, uuid, uploadDir, localPath string, overwrite bool, progress func(int64)) error {
 	f, err := os.Open(localPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", localPath)
+	}
 	p, err := c.UploadPassport(ctx, daemonID, uuid, uploadDir)
 	if err != nil {
 		return err
 	}
-	u, err := c.UploadURL(p)
+	name := filepath.Base(localPath)
+	id, received, err := c.uploadInit(ctx, p, name, fi.Size(), overwrite)
+	if err != nil {
+		if isNotFound(err) {
+			return c.uploadWhole(ctx, p, name, f, overwrite, progress)
+		}
+		return err
+	}
+	size := fi.Size()
+	offset := int64(0)
+	if len(received) > 0 && received[0].Start == 0 {
+		offset = received[0].End
+	}
+	if offset > size {
+		offset = size
+	}
+	pieceSize := int64(uploadPieceSize)
+	for offset < size {
+		n := pieceSize
+		if n > size-offset {
+			n = size - offset
+		}
+		err := c.uploadPiece(ctx, p, id, name, f, offset, n)
+		if err != nil {
+			if isTooLarge(err) && n > uploadMinPiece {
+				pieceSize = n / 2
+				if pieceSize < uploadMinPiece {
+					pieceSize = uploadMinPiece
+				}
+				continue
+			}
+			return err
+		}
+		offset += n
+		if progress != nil {
+			progress(offset)
+		}
+	}
+	return nil
+}
+
+const (
+	uploadPieceSize = 2 << 20
+	uploadMinPiece  = 64 << 10
+)
+
+type uploadRange struct {
+	Start int64 `json:"start"`
+	End   int64 `json:"end"`
+}
+
+// uploadInit starts a chunked upload and returns its writer ID and the ranges
+// the daemon already has.
+func (c *Client) uploadInit(ctx context.Context, p Passport, name string, size int64, overwrite bool) (string, []uploadRange, error) {
+	u, err := c.daemonURL(p, "/upload-new/"+url.PathEscape(p.Password))
+	if err != nil {
+		return "", nil, err
+	}
+	q := url.Values{}
+	q.Set("filename", name)
+	q.Set("size", strconv.FormatInt(size, 10))
+	q.Set("sum", "")
+	if !overwrite {
+		q.Set("overwrite", "false")
+	}
+	u += "?" + q.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	res, err := c.dhc.Do(req)
+	if err != nil {
+		return "", nil, redactURLError(err)
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return "", nil, err
+	}
+	var r response
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &r)
+	}
+	if res.StatusCode >= 400 || r.Status != 0 && r.Status != http.StatusOK {
+		return "", nil, apiError(raw, r, res.StatusCode)
+	}
+	payload := r.Data
+	if len(payload) == 0 {
+		payload = raw
+	}
+	var init struct {
+		ID       string        `json:"id"`
+		Received []uploadRange `json:"received"`
+	}
+	if err := json.Unmarshal(payload, &init); err != nil {
+		return "", nil, fmt.Errorf("decode upload start: %w", err)
+	}
+	if init.ID == "" {
+		return "", nil, errors.New("the daemon returned no upload task ID")
+	}
+	return init.ID, init.Received, nil
+}
+
+// uploadPiece sends one range of the file.
+func (c *Client) uploadPiece(ctx context.Context, p Passport, id, name string, f *os.File, offset, n int64) error {
+	u, err := c.daemonURL(p, "/upload-piece/"+url.PathEscape(id))
 	if err != nil {
 		return err
 	}
-	var src io.Reader = f
-	if progress != nil {
-		src = &progressReader{r: f, fn: progress}
-	}
-	body, ct := multipartFile("file", filepath.Base(localPath), src)
-	if !overwrite {
-		q, _ := url.Parse(u)
-		vals := q.Query()
-		vals.Set("overwrite", "false")
-		q.RawQuery = vals.Encode()
-		u = q.String()
-	}
+	q := url.Values{}
+	q.Set("offset", strconv.FormatInt(offset, 10))
+	u += "?" + q.Encode()
+	body, ct := multipartFile("file", name, io.NewSectionReader(f, offset, n))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, body)
 	if err != nil {
 		if closer, ok := body.(io.Closer); ok {
@@ -856,10 +964,67 @@ func (c *Client) Upload(ctx context.Context, daemonID, uuid, uploadDir, localPat
 	}
 	defer res.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	if res.StatusCode == http.StatusRequestEntityTooLarge {
+		return &APIError{HTTPStatus: res.StatusCode, Message: "the reverse proxy rejected the upload piece as too large"}
+	}
 	if res.StatusCode != http.StatusOK {
-		return &APIError{HTTPStatus: res.StatusCode, Message: strings.TrimSpace(string(raw))}
+		return &APIError{HTTPStatus: res.StatusCode, Message: shortText(raw)}
 	}
 	return nil
+}
+
+// uploadWhole is the single-request upload used by daemons without
+// /upload-new.
+func (c *Client) uploadWhole(ctx context.Context, p Passport, name string, f *os.File, overwrite bool, progress func(int64)) error {
+	u, err := c.UploadURL(p)
+	if err != nil {
+		return err
+	}
+	if !overwrite {
+		q, _ := url.Parse(u)
+		vals := q.Query()
+		vals.Set("overwrite", "false")
+		q.RawQuery = vals.Encode()
+		u = q.String()
+	}
+	var src io.Reader = f
+	if progress != nil {
+		src = &progressReader{r: f, fn: progress}
+	}
+	body, ct := multipartFile("file", name, src)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, body)
+	if err != nil {
+		if closer, ok := body.(io.Closer); ok {
+			closer.Close()
+		}
+		return err
+	}
+	req.Header.Set("Content-Type", ct)
+	res, err := c.dhc.Do(req)
+	if err != nil {
+		return redactURLError(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	if res.StatusCode == http.StatusRequestEntityTooLarge {
+		return &APIError{HTTPStatus: res.StatusCode, Message: "the reverse proxy rejected the upload as too large; this daemon does not support chunked uploads"}
+	}
+	if res.StatusCode != http.StatusOK {
+		return &APIError{HTTPStatus: res.StatusCode, Message: shortText(raw)}
+	}
+	return nil
+}
+
+// isTooLarge reports a proxy body-size rejection.
+func isTooLarge(err error) bool {
+	var ae *APIError
+	return errors.As(err, &ae) && ae.HTTPStatus == http.StatusRequestEntityTooLarge
+}
+
+// isNotFound reports an endpoint the daemon does not implement.
+func isNotFound(err error) bool {
+	var ae *APIError
+	return errors.As(err, &ae) && ae.NotFound()
 }
 
 // cleanTarget makes a path absolute inside the instance. Windows paths with a

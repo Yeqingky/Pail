@@ -158,6 +158,9 @@ func TestMCSMToolUploadShowsATransferTask(t *testing.T) {
 				t.Errorf("upload_dir = %q", r.URL.Query().Get("upload_dir"))
 			}
 			io.WriteString(w, `{"status":200,"data":{"password":"pw","addr":"ws://`+r.Host+`"}}`)
+		case "/upload-new/pw":
+			w.WriteHeader(http.StatusNotFound)
+			io.WriteString(w, `[404] Not Found`)
 		case "/upload/pw":
 			f, h, err := r.FormFile("file")
 			if err != nil {
