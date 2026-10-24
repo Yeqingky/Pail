@@ -65,11 +65,11 @@ const maxVaultAutoLockMinutes = 7 * 24 * 60
 type Account struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
-	Provider           string `json:"provider"` // "aws" | "s3" (generic compatible)
+	Provider           string `json:"provider"` // "aws" | "s3" (generic compatible) | "mcsmanager"
 	Endpoint           string `json:"endpoint,omitempty"`
 	Region             string `json:"region,omitempty"`
 	PathStyle          bool   `json:"pathStyle,omitempty"`
-	Credentials        string `json:"credentials"` // "static" | "profile" | "default" | "anonymous"
+	Credentials        string `json:"credentials"` // "static" | "profile" | "default" | "anonymous" | "apikey"
 	AccessKeyID        string `json:"accessKeyId,omitempty"`
 	Profile            string `json:"profile,omitempty"`
 	RoleARN            string `json:"roleArn,omitempty"`
@@ -92,6 +92,9 @@ type Account struct {
 const (
 	ProviderAWS = "aws"
 	ProviderS3  = "s3"
+	// ProviderMCS is an MCSManager panel; its accounts use an API key and the
+	// file manager API rather than S3.
+	ProviderMCS = "mcsmanager"
 )
 
 // Account.Credentials values.
@@ -100,9 +103,12 @@ const (
 	CredProfile   = "profile"
 	CredDefault   = "default"
 	CredAnonymous = "anonymous"
+	// CredAPIKey stores the panel API key in Secrets.SecretAccessKey.
+	CredAPIKey = "apikey"
 )
 
-// Secrets are the keyring-backed parts of a static credential.
+// Secrets are the keyring-backed parts of a credential. SecretAccessKey holds
+// the secret access key for CredStatic and the API key for CredAPIKey.
 type Secrets struct{ SecretAccessKey, SessionToken string }
 
 // ---- browsing --------------------------------------------------------------

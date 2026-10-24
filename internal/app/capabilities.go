@@ -40,6 +40,19 @@ const (
 	CapMultipart  Capability = "multipart"
 	CapSync       Capability = "sync"
 	CapCloudFront Capability = "cloudfront"
+
+	// MCSManager file manager.
+	CapMCSInstanceList Capability = "mcs.instance.list"
+	CapMCSFileList     Capability = "mcs.file.list"
+	CapMCSFileDownload Capability = "mcs.file.download"
+	CapMCSFileUpload   Capability = "mcs.file.upload"
+	CapMCSFileDelete   Capability = "mcs.file.delete"
+	CapMCSFileMkdir    Capability = "mcs.file.mkdir"
+	CapMCSFileCopy     Capability = "mcs.file.copy"
+	CapMCSFileMove     Capability = "mcs.file.move"
+	CapMCSFileChmod    Capability = "mcs.file.chmod"
+	CapMCSFileArchive  Capability = "mcs.file.archive"
+	CapMCSFileText     Capability = "mcs.file.text"
 )
 
 // CapabilitySet is the set of capabilities a backend declares. A nil set

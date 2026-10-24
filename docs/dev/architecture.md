@@ -10,6 +10,7 @@ cmd/pail           命令行。只调用 internal/app，与桌面程序共用配
 internal/app       Service：账户、浏览、任务队列、传输、批量、版本、属性、规则、同步、桶管理、CloudFront、日志、加密保险库
 internal/storage   S3 协议层：client、传输（分片）、复制、条件写入、能力探测
 internal/cloud     AWS 专有服务（类型化 CloudFront）
+internal/mcsmanager MCSManager 面板 HTTP API：节点、实例、文件管理
 internal/rules     上传规则、GZIP / ZIP / AES-256 ZIP
 internal/safepath  下载路径安全：拒绝 `..`、绝对路径、Windows 保留名、符号链接逃逸；临时文件加发布
 internal/trash     本地删除进系统回收站（Windows、Linux 按 freedesktop 规范）
@@ -20,7 +21,7 @@ tools/release      本地与 CI 共用的 Go 发布入口，跨平台构建并�
 tools/pack         归档写入，保证可执行文件权限为 0755
 ```
 
-依赖方向只能向下：`cmd/*` → `internal/app` → `internal/storage` / `internal/cloud` / `internal/rules` / `internal/safepath` / `internal/trash`。界面和命令行不直接访问 S3 SDK。
+依赖方向只能向下：`cmd/*` → `internal/app` → `internal/storage` / `internal/cloud` / `internal/mcsmanager` / `internal/rules` / `internal/safepath` / `internal/trash`。界面和命令行不直接访问 S3 SDK 或面板 API。
 
 ### 1.1 后端插件与能力
 
@@ -29,7 +30,8 @@ tools/pack         归档写入，保证可执行文件权限为 0755
 - 能力表示“插件实现了这个操作”，不表示“当前账户有权限”。服务端返回 403 时仍然是 `AccessDenied`，不能当成不支持。
 - 服务层在每个操作入口用 `requireCapability` 校验；未声明的能力返回 `Unsupported`，不执行任何网络请求。
 - 桌面界面的命令表、工具栏、上下文菜单、命令面板、侧栏工具和检查器标签都通过同一条可见性判断过滤，因此未声明的功能不会显示，也不能通过快捷键运行。
-- 内置插件：`aws` 声明 S3 协议操作加 `cloudfront`；`s3` 声明 S3 协议操作，不含 `cloudfront`。
+- 内置插件：`aws` 声明 S3 协议操作加 `cloudfront`；`s3` 声明 S3 协议操作，不含 `cloudfront`；`mcsmanager` 只声明 `mcs.*` 文件管理操作。
+- MCSManager 不使用 `Location`：节点 ID、实例 UUID 和实例内绝对路径构成资源地址。它的文件操作在 `internal/app/mcsmanager.go`，界面在 `cmd/pail-desktop/mcs_tool.go`，协议客户端在 `internal/mcsmanager`。面板 API 密钥存在钥匙串里，只以 `apikey` 查询参数发送；错误和日志不记录请求 URL。
 
 ## 2. 线程规则
 

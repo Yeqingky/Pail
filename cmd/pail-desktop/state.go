@@ -225,6 +225,9 @@ func newApp(svc *core.Service, opts options) *app {
 	a.accounts = svc.Accounts()
 	if len(a.accounts) > 0 {
 		a.accountID = a.accounts[0].ID
+		if core.ProviderHasCapability(a.accounts[0].Provider, core.CapMCSInstanceList) {
+			a.openTool("mcs")
+		}
 	}
 	if opts.tool != "" {
 		a.openTool(opts.tool)
@@ -351,6 +354,9 @@ func (a *app) selectAccount(id string) {
 	a.clearListing()
 	a.bucketsGen++
 	a.bucketsLoad = false
+	if ac := a.account(); ac.ID != "" && core.ProviderHasCapability(ac.Provider, core.CapMCSInstanceList) {
+		a.openTool("mcs")
+	}
 	if id != "" {
 		a.loadBuckets(true)
 	}
@@ -361,6 +367,10 @@ func (a *app) selectAccount(id string) {
 func (a *app) loadBuckets(openFirst bool) {
 	id := a.accountID
 	if id == "" {
+		return
+	}
+	if !core.ProviderHasCapability(a.account().Provider, core.CapBucketList) {
+		a.buckets, a.bucketsLoad, a.bucketsErr, a.bucketsFix = nil, false, "", ""
 		return
 	}
 	a.bucketsGen++

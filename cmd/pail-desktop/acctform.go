@@ -57,6 +57,13 @@ const (
 	testFailed
 )
 
+// Provider choices in the account dialog. The order matches the segments.
+const (
+	providerAWS = iota
+	providerS3
+	providerMCS
+)
+
 func (f *acctForm) busy() bool { return f.saving || f.test == testRunning }
 
 func credChoices() []choice {
@@ -93,14 +100,17 @@ func (a *app) openAccountForm(edit bool) {
 		return
 	}
 	f.editing = ac.ID
-	f.provider = 0
-	if ac.Provider == core.ProviderS3 {
-		f.provider = 1
+	f.provider = providerAWS
+	switch ac.Provider {
+	case core.ProviderS3:
+		f.provider = providerS3
+	case core.ProviderMCS:
+		f.provider = providerMCS
 	}
 	f.name, f.endpoint, f.region, f.path = ac.Name, ac.Endpoint, ac.Region, ac.PathStyle
 	f.cdnURL, f.cdnBuckets = ac.CDNURL, strings.Join(ac.CDNBuckets, ", ")
 	f.creds, f.access, f.profile = ac.Credentials, ac.AccessKeyID, ac.Profile
-	f.hasSec = ac.Credentials == core.CredStatic && !ac.SecretMissing
+	f.hasSec = (ac.Credentials == core.CredStatic || ac.Credentials == core.CredAPIKey) && !ac.SecretMissing
 	f.missing = ac.SecretMissing
 	f.roleARN, f.externalID, f.roleName = ac.RoleARN, ac.ExternalID, ac.RoleSessionName
 	f.skipTLS = ac.InsecureSkipVerify
@@ -117,7 +127,7 @@ func (f *acctForm) fieldErrors() map[string]string {
 	if strings.TrimSpace(f.name) == "" {
 		e["name"] = locales.AcctErrName()
 	}
-	if f.provider == 1 {
+	if f.provider == providerS3 || f.provider == providerMCS {
 		ep := strings.TrimSpace(f.endpoint)
 		u, err := url.Parse(ep)
 		switch {
@@ -126,6 +136,12 @@ func (f *acctForm) fieldErrors() map[string]string {
 		case err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https"):
 			e["endpoint"] = locales.AcctErrEndpointScheme()
 		}
+	}
+	if f.provider == providerMCS {
+		if f.secret == "" && !(f.editing != "" && f.hasSec) {
+			e["secret"] = locales.AcctErrAPIKey()
+		}
+		return e
 	}
 	switch f.creds {
 	case core.CredStatic:
@@ -183,10 +199,24 @@ func (f *acctForm) build() (core.Account, *core.Secrets) {
 		RoleSessionName: strings.TrimSpace(f.roleName), InsecureSkipVerify: f.skipTLS, ChecksumMode: f.checksum,
 		CDNURL: strings.TrimSpace(f.cdnURL), CDNBuckets: splitList(f.cdnBuckets),
 	}
-	if f.provider == 1 {
+	if f.provider == providerS3 {
 		ac.Provider = core.ProviderS3
 		ac.Endpoint = strings.TrimSpace(f.endpoint)
 		ac.PathStyle = f.path
+	}
+	if f.provider == providerMCS {
+		ac.Provider = core.ProviderMCS
+		ac.Credentials = core.CredAPIKey
+		ac.Endpoint = strings.TrimSpace(f.endpoint)
+		ac.Region, ac.PathStyle, ac.ChecksumMode = "", false, ""
+		ac.CDNURL, ac.CDNBuckets = "", nil
+		ac.AccessKeyID, ac.Profile = "", ""
+		ac.RoleARN, ac.ExternalID, ac.RoleSessionName = "", "", ""
+		var sec *core.Secrets
+		if f.secret != "" {
+			sec = &core.Secrets{SecretAccessKey: f.secret}
+		}
+		return ac, sec
 	}
 	switch f.creds {
 	case core.CredStatic:
@@ -347,26 +377,40 @@ func (a *app) accountDialog(c *ui.Context) {
 func (a *app) accountFields(c *ui.Context, errs map[string]string) {
 	f := &a.af
 	k := tk(c)
-	if f.missing && f.creds == core.CredStatic {
+	if f.missing && (f.creds == core.CredStatic || f.creds == core.CredAPIKey) {
 		warnNotice(c, locales.AcctSecretMissing())
 	}
 	formFieldHelp(c, locales.AcctProvider(), locales.AcctProviderHelp(), "", func() {
-		if segmented(c, &f.provider, locales.AcctProvider(), "AWS", locales.AcctS3Compatible()) {
+		if segmented(c, &f.provider, locales.AcctProvider(), "AWS", locales.AcctS3Compatible(), locales.AcctProviderMcs()) {
 			f.test = testIdle
+			if f.provider != providerMCS && f.creds == core.CredAPIKey {
+				f.creds = core.CredStatic
+			}
 		}
 	})
 	formField(c, locales.CommonName(), errs["name"], func() {
 		inputBox(c, &f.name, locales.CommonName(), locales.AcctNamePlaceholder(), inputOpts{invalid: errs["name"] != "", focus: !f.missing})
 	})
-	if f.provider == 1 {
+	if f.provider == providerS3 || f.provider == providerMCS {
 		formFieldHelp(c, locales.AcctEndpoint(), locales.AcctEndpointHelp(), errs["endpoint"], func() {
 			inputBox(c, &f.endpoint, locales.AcctEndpoint(), "https://s3.example.com", inputOpts{invalid: errs["endpoint"] != "", mono: true})
 		})
 	}
+	if f.provider == providerMCS {
+		ph := ""
+		if f.editing != "" && f.hasSec {
+			ph = locales.AcctKeepSecret()
+		}
+		formFieldHelp(c, locales.AcctAPIKey(), locales.AcctAPIKeyHelp(), errs["secret"], func() {
+			inputBox(c, &f.secret, locales.AcctAPIKey(), ph, inputOpts{invalid: errs["secret"] != "", password: true, focus: f.missing})
+		})
+		switchRowHelp(c, locales.AcctSkipTLS(), locales.AcctSkipTLSHelp(), &f.skipTLS)
+		return
+	}
 	formFieldHelp(c, locales.CommonRegion(), locales.AcctRegionHelp(), "", func() {
 		inputBox(c, &f.region, locales.CommonRegion(), "us-east-1", inputOpts{})
 	})
-	if f.provider == 1 {
+	if f.provider == providerS3 {
 		switchRowHelp(c, locales.AcctPathStyle(), locales.AcctPathStyleHelp(), &f.path)
 	}
 	formFieldHelp(c, locales.AcctCDNURL(), locales.AcctCDNURLHelp(), errs["cdn"], func() {

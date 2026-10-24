@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/DejavuMoe/Pail/internal/cloud"
+	"github.com/DejavuMoe/Pail/internal/mcsmanager"
 	"github.com/DejavuMoe/Pail/internal/storage"
 )
 
@@ -17,9 +18,10 @@ type clientEntry struct {
 	cfg storage.Config
 	acc Account
 
-	mu sync.Mutex // guards st and cl
+	mu sync.Mutex // guards st, cl and mc
 	st *storage.Client
 	cl *cloud.Client
+	mc *mcsmanager.Client
 }
 
 // buildCall lets concurrent callers share one (possibly slow, keyring-prompting)
@@ -41,6 +43,8 @@ func storageConfig(a Account, sec Secrets) storage.Config {
 	switch a.Credentials {
 	case CredStatic:
 		cfg.AccessKeyID, cfg.SecretAccessKey, cfg.SessionToken = a.AccessKeyID, sec.SecretAccessKey, sec.SessionToken
+	case CredAPIKey:
+		cfg.SecretAccessKey = sec.SecretAccessKey
 	case CredProfile:
 		cfg.UseDefaultCredentials, cfg.Profile = true, a.Profile
 	case CredDefault:
@@ -172,6 +176,32 @@ func (s *Service) storageClient(ctx context.Context, id string) (*storage.Client
 		e.st = c
 	}
 	return e.st, nil
+}
+
+// mcsClient returns the (cached) MCSManager panel client of an account. Only a
+// backend that declares the MCSManager capabilities can use it.
+func (s *Service) mcsClient(ctx context.Context, id string) (*mcsmanager.Client, error) {
+	e, err := s.entry(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !providerCapabilities(e.acc.Provider).Has(CapMCSInstanceList) {
+		return nil, opErr("", ErrUnsupported, "the %s backend is not an MCSManager panel", e.acc.Provider)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.mc == nil {
+		c, err := mcsmanager.New(mcsmanager.Config{
+			Endpoint:           e.acc.Endpoint,
+			APIKey:             e.cfg.SecretAccessKey,
+			InsecureSkipVerify: e.acc.InsecureSkipVerify,
+		})
+		if err != nil {
+			return nil, err
+		}
+		e.mc = c
+	}
+	return e.mc, nil
 }
 
 // cloudClient returns the (cached) CloudFront client of an account, built by

@@ -451,6 +451,61 @@ func (s *Service) Invalidation(ctx context.Context, accountID, distID, id string
 func (s *Service) Invalidations(ctx context.Context, accountID, distID string) ([]cloud.Invalidation, error)
 ```
 
+## 10.1 MCSManager（`mcsmanager.go`、`internal/mcsmanager`）
+
+MCSManager 账户使用 `ProviderMCS` 和 `CredAPIKey`；`Endpoint` 是面板地址，API 密钥保存在钥匙串的 `Secrets.SecretAccessKey`。它们不是 S3 账户：`Location`、桶和对象键都不适用，文件用节点 ID、实例 UUID 和实例内绝对路径定位。
+
+```go
+const (
+	ProviderMCS = "mcsmanager"
+	CredAPIKey  = "apikey"
+)
+
+type MCSDaemon struct {
+	ID, Name, Address string
+	Available         bool
+}
+type MCSInstance struct {
+	DaemonID, UUID, Name string
+	Status               int
+}
+type MCSFile struct {
+	Name, Path   string
+	Folder       bool
+	Size         int64
+	Mode         int
+	Modified     string // the panel's display string
+}
+type MCSFilePage struct {
+	Entries                []MCSFile
+	Page, PageSize, Total  int
+	Path                   string
+}
+
+func (s *Service) MCSDaemons(ctx context.Context, accountID string) ([]MCSDaemon, error)
+func (s *Service) MCSInstances(ctx context.Context, accountID, daemonID string, page, pageSize int) ([]MCSInstance, error)
+func (s *Service) MCSFiles(ctx context.Context, accountID, daemonID, uuid, dir string, page, pageSize int, filter string) (MCSFilePage, error)
+func (s *Service) MCSFileStatus(ctx context.Context, accountID, daemonID, uuid string) (mcsmanager.FileStatus, error)
+func (s *Service) MCSMkdir(ctx context.Context, accountID, daemonID, uuid, target string) error
+func (s *Service) MCSTouch(ctx context.Context, accountID, daemonID, uuid, target string) error
+func (s *Service) MCSDelete(ctx context.Context, accountID, daemonID, uuid string, targets []string) error
+func (s *Service) MCSCopy(ctx context.Context, accountID, daemonID, uuid string, pairs [][2]string) error
+func (s *Service) MCSMove(ctx context.Context, accountID, daemonID, uuid string, pairs [][2]string) error
+func (s *Service) MCSChmod(ctx context.Context, accountID, daemonID, uuid, target string, mode int, deep bool) error
+func (s *Service) MCSCompress(ctx context.Context, accountID, daemonID, uuid, source string, targets []string) error
+func (s *Service) MCSDecompress(ctx context.Context, accountID, daemonID, uuid, source, target, code string) error
+func (s *Service) MCSReadText(ctx context.Context, accountID, daemonID, uuid, target string) (string, error)
+func (s *Service) MCSWriteText(ctx context.Context, accountID, daemonID, uuid, target, text string) error
+func (s *Service) MCSDownload(ctx context.Context, accountID, daemonID, uuid, remotePath, destDir string) (string, error)
+func (s *Service) MCSUpload(ctx context.Context, accountID, daemonID, uuid, remoteDir string, localPaths []string) (int, error)
+```
+
+- 每个方法先检查对应的 `mcs.*` 能力；MCSManager 账户不声明 S3 能力，S3 账户也不声明 `mcs.*`。
+- 面板请求把 API 密钥放在 `apikey` 查询参数；错误和日志不记录 URL。节点列表需要管理员密钥，非管理员账户退回全局实例搜索，节点名显示为节点 ID。
+- 下载和上传使用面板签发的 one-time passport；下载写入临时文件后无覆盖发布，重名时使用编号名；上传发送 `overwrite=false`，由守护进程保留已有文件。
+- `MCSDownload`/`MCSUpload` 是同步调用，界面必须在后台线程执行；它们暂不进入任务队列。
+- 该客户端只实现文档公开的文件接口；文档未给出的行为（例如目录复制的递归与冲突、下载任务进度）不在能力声明中承诺。
+
 ## 11. 测试夹具 `internal/s3test`
 
 内存版 S3 httptest 服务器，供 app、UI 和 CLI 测试使用，UI 的 `--demo` 模式也可以用它。覆盖范围：

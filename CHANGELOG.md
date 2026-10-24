@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- MCSManager accounts: connect a panel with an API key, browse its nodes and instances, and upload, download, create folders or delete instance files.
+- Storage backends now declare the operations they support. Commands and tools an account's backend does not support are hidden instead of shown disabled.
+
 ### Fixed
 
 - Large upload and download batches now report their full result even after older tasks leave the history, so an early failure is no longer hidden.

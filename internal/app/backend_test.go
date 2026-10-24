@@ -7,8 +7,8 @@ import (
 
 func TestBackendsDeclareCapabilities(t *testing.T) {
 	bs := Backends()
-	if len(bs) != 2 {
-		t.Fatalf("backends = %v, want aws and s3", bs)
+	if len(bs) != 3 {
+		t.Fatalf("backends = %v, want aws, mcsmanager and s3", bs)
 	}
 	byID := map[string]CapabilitySet{}
 	for _, b := range bs {
@@ -17,9 +17,15 @@ func TestBackendsDeclareCapabilities(t *testing.T) {
 		}
 		byID[b.ID] = b.Capabilities
 	}
-	aws, s3 := byID[ProviderAWS], byID[ProviderS3]
-	if aws == nil || s3 == nil {
+	aws, s3, mcs := byID[ProviderAWS], byID[ProviderS3], byID[ProviderMCS]
+	if aws == nil || s3 == nil || mcs == nil {
 		t.Fatalf("missing built-in backend: %v", byID)
+	}
+	if !mcs.Has(CapMCSInstanceList) || !mcs.Has(CapMCSFileList) || !mcs.Has(CapMCSFileDownload) || !mcs.Has(CapMCSFileUpload) {
+		t.Error("mcsmanager lacks its file manager capabilities")
+	}
+	if mcs.Has(CapObjectList) || mcs.Has(CapBucketList) {
+		t.Error("mcsmanager declares S3 capabilities")
 	}
 	if !aws.Has(CapCloudFront) {
 		t.Error("aws must declare cloudfront")

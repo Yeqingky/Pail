@@ -5,7 +5,7 @@
 <h1 align="center">Pail</h1>
 
 <p align="center">
-  A desktop client for Amazon S3, Cloudflare R2, MinIO and other S3-compatible storage.<br>
+  A desktop client for Amazon S3, Cloudflare R2, MinIO, other S3-compatible storage and MCSManager panels.<br>
   Windows, macOS and Linux. Free and open source.
 </p>
 
@@ -31,6 +31,7 @@
 - **Buckets.** Create buckets (with region and object lock), empty and delete them, and copy or move a bucket's contents. Edit 14 bucket settings as a form or as JSON: versioning, encryption, policy, CORS, lifecycle, logging, tags, static website, public access block, ownership, object lock, requester pays, transfer acceleration and replication. List and abort incomplete multipart uploads.
 - **Sync jobs.** Save jobs that upload, download or mirror a folder. Compare by size and time, size or checksum, exclude files by pattern, and review the plan before it runs.
 - **Upload rules.** Match by bucket and key pattern to set headers, storage class and encryption, or to compress with GZIP, ZIP or AES-256 ZIP. Compressed objects can be decoded on download.
+- **MCSManager.** Connect a panel with an API key, choose a node and an instance, and browse its files. Upload, download, create folders and delete files without leaving the app.
 - **Links.** Presigned GET and PUT URLs with an expiry, for a chosen version or for many objects at once. An optional CDN domain per account, with the CDN link offered after each upload. CloudFront invalidations for AWS accounts.
 - **Interface.** Command palette (`Ctrl+K`, or `⌘K` on macOS) and keyboard shortcuts. English and Simplified Chinese, light and dark themes.
 
@@ -116,6 +117,7 @@ Every command, its flags, JSON output and exit codes are in the [command-line re
 - The desktop app has been run by hand on Windows (x64), Linux (x64) and macOS (Apple silicon and Intel). The Arm builds for Windows and Linux have not been tried by hand yet.
 - Tested services: Amazon S3, Cloudflare R2, Wasabi, MinIO and VersityGW.
 - Not yet tested on a real AWS account: AssumeRole credentials and CloudFront.
+- MCSManager support has not yet been tested against a real panel installation.
 
 Known limitations are listed in the [changelog](CHANGELOG.md).
 

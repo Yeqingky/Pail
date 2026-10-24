@@ -394,6 +394,26 @@ func (msgs Messages) AcctCredentialsHelp() string {
 	return Catalog.Format(msgs.locale, "acctCredentialsHelp", nil)
 }
 
+// AcctAPIKey says "API key"
+// in the language the app shows.
+func AcctAPIKey() string { return In(i18n.Locale()).AcctAPIKey() }
+
+// AcctAPIKey says "API key"
+// in the language of msgs.
+func (msgs Messages) AcctAPIKey() string {
+	return Catalog.Format(msgs.locale, "acctAPIKey", nil)
+}
+
+// AcctAPIKeyHelp says "Created in MCSManager under User info. It has the permissions of that account."
+// in the language the app shows.
+func AcctAPIKeyHelp() string { return In(i18n.Locale()).AcctAPIKeyHelp() }
+
+// AcctAPIKeyHelp says "Created in MCSManager under User info. It has the permissions of that account."
+// in the language of msgs.
+func (msgs Messages) AcctAPIKeyHelp() string {
+	return Catalog.Format(msgs.locale, "acctAPIKeyHelp", nil)
+}
+
 // AcctEndpoint says "Endpoint"
 // in the language the app shows.
 func AcctEndpoint() string { return In(i18n.Locale()).AcctEndpoint() }
@@ -422,6 +442,16 @@ func AcctErrAccess() string { return In(i18n.Locale()).AcctErrAccess() }
 // in the language of msgs.
 func (msgs Messages) AcctErrAccess() string {
 	return Catalog.Format(msgs.locale, "acctErrAccess", nil)
+}
+
+// AcctErrAPIKey says "Enter the API key"
+// in the language the app shows.
+func AcctErrAPIKey() string { return In(i18n.Locale()).AcctErrAPIKey() }
+
+// AcctErrAPIKey says "Enter the API key"
+// in the language of msgs.
+func (msgs Messages) AcctErrAPIKey() string {
+	return Catalog.Format(msgs.locale, "acctErrAPIKey", nil)
 }
 
 // AcctErrCDNTemplate says "CDN URL template with '{bucket}' must also contain '{key}'"
@@ -612,6 +642,16 @@ func AcctProviderHelp() string { return In(i18n.Locale()).AcctProviderHelp() }
 // in the language of msgs.
 func (msgs Messages) AcctProviderHelp() string {
 	return Catalog.Format(msgs.locale, "acctProviderHelp", nil)
+}
+
+// AcctProviderMcs says "MCSManager"
+// in the language the app shows.
+func AcctProviderMcs() string { return In(i18n.Locale()).AcctProviderMcs() }
+
+// AcctProviderMcs says "MCSManager"
+// in the language of msgs.
+func (msgs Messages) AcctProviderMcs() string {
+	return Catalog.Format(msgs.locale, "acctProviderMcs", nil)
 }
 
 // AcctRegionHelp says "The region requests are signed for, such as us-east-1. Leave the default unless your service asks for a specific region."
@@ -1396,6 +1436,16 @@ func AliasToolCloudfront() string { return In(i18n.Locale()).AliasToolCloudfront
 // in the language of msgs.
 func (msgs Messages) AliasToolCloudfront() string {
 	return Catalog.Format(msgs.locale, "aliasToolCloudfront", nil)
+}
+
+// AliasToolMcs says "panel instance server files"
+// in the language the app shows.
+func AliasToolMcs() string { return In(i18n.Locale()).AliasToolMcs() }
+
+// AliasToolMcs says "panel instance server files"
+// in the language of msgs.
+func (msgs Messages) AliasToolMcs() string {
+	return Catalog.Format(msgs.locale, "aliasToolMcs", nil)
 }
 
 // AliasToolMime says "content-type"
@@ -3374,6 +3424,16 @@ func CmdToolCloudfront() string { return In(i18n.Locale()).CmdToolCloudfront() }
 // in the language of msgs.
 func (msgs Messages) CmdToolCloudfront() string {
 	return Catalog.Format(msgs.locale, "cmdToolCloudfront", nil)
+}
+
+// CmdToolMcs says "MCSManager"
+// in the language the app shows.
+func CmdToolMcs() string { return In(i18n.Locale()).CmdToolMcs() }
+
+// CmdToolMcs says "MCSManager"
+// in the language of msgs.
+func (msgs Messages) CmdToolMcs() string {
+	return Catalog.Format(msgs.locale, "cmdToolMcs", nil)
 }
 
 // CmdToolMime says "MIME types"
@@ -5680,6 +5740,196 @@ func MainTitleDemo() string { return In(i18n.Locale()).MainTitleDemo() }
 // in the language of msgs.
 func (msgs Messages) MainTitleDemo() string {
 	return Catalog.Format(msgs.locale, "mainTitleDemo", nil)
+}
+
+// McsDeleteMessage says "The selected files and folders are deleted on the server. This cannot be undone."
+// in the language the app shows.
+func McsDeleteMessage() string { return In(i18n.Locale()).McsDeleteMessage() }
+
+// McsDeleteMessage says "The selected files and folders are deleted on the server. This cannot be undone."
+// in the language of msgs.
+func (msgs Messages) McsDeleteMessage() string {
+	return Catalog.Format(msgs.locale, "mcsDeleteMessage", nil)
+}
+
+// McsDeleteTitle says "Delete {n, plural, one {# item} other {# items}}?"
+// in the language the app shows.
+func McsDeleteTitle(n int) string { return In(i18n.Locale()).McsDeleteTitle(n) }
+
+// McsDeleteTitle says "Delete {n, plural, one {# item} other {# items}}?"
+// in the language of msgs.
+func (msgs Messages) McsDeleteTitle(n int) string {
+	return Catalog.Format(msgs.locale, "mcsDeleteTitle", map[string]any{"n": n})
+}
+
+// McsDeleted says "Deleted {n, plural, one {# item} other {# items}}"
+// in the language the app shows.
+func McsDeleted(n int) string { return In(i18n.Locale()).McsDeleted(n) }
+
+// McsDeleted says "Deleted {n, plural, one {# item} other {# items}}"
+// in the language of msgs.
+func (msgs Messages) McsDeleted(n int) string {
+	return Catalog.Format(msgs.locale, "mcsDeleted", map[string]any{"n": n})
+}
+
+// McsDownloaded says "Downloaded {name}"
+// in the language the app shows.
+func McsDownloaded(name string) string { return In(i18n.Locale()).McsDownloaded(name) }
+
+// McsDownloaded says "Downloaded {name}"
+// in the language of msgs.
+func (msgs Messages) McsDownloaded(name string) string {
+	return Catalog.Format(msgs.locale, "mcsDownloaded", map[string]any{"name": name})
+}
+
+// McsFailed says "The file operation failed: {detail}"
+// in the language the app shows.
+func McsFailed(detail string) string { return In(i18n.Locale()).McsFailed(detail) }
+
+// McsFailed says "The file operation failed: {detail}"
+// in the language of msgs.
+func (msgs Messages) McsFailed(detail string) string {
+	return Catalog.Format(msgs.locale, "mcsFailed", map[string]any{"detail": detail})
+}
+
+// McsFolderCreated says "Created folder {name}"
+// in the language the app shows.
+func McsFolderCreated(name string) string { return In(i18n.Locale()).McsFolderCreated(name) }
+
+// McsFolderCreated says "Created folder {name}"
+// in the language of msgs.
+func (msgs Messages) McsFolderCreated(name string) string {
+	return Catalog.Format(msgs.locale, "mcsFolderCreated", map[string]any{"name": name})
+}
+
+// McsFolderName says "Folder name"
+// in the language the app shows.
+func McsFolderName() string { return In(i18n.Locale()).McsFolderName() }
+
+// McsFolderName says "Folder name"
+// in the language of msgs.
+func (msgs Messages) McsFolderName() string {
+	return Catalog.Format(msgs.locale, "mcsFolderName", nil)
+}
+
+// McsFolderNameRequired says "Enter a name without slashes"
+// in the language the app shows.
+func McsFolderNameRequired() string { return In(i18n.Locale()).McsFolderNameRequired() }
+
+// McsFolderNameRequired says "Enter a name without slashes"
+// in the language of msgs.
+func (msgs Messages) McsFolderNameRequired() string {
+	return Catalog.Format(msgs.locale, "mcsFolderNameRequired", nil)
+}
+
+// McsHelp says "Files are listed from the instance root. Uploads use a one-time credential from the panel."
+// in the language the app shows.
+func McsHelp() string { return In(i18n.Locale()).McsHelp() }
+
+// McsHelp says "Files are listed from the instance root. Uploads use a one-time credential from the panel."
+// in the language of msgs.
+func (msgs Messages) McsHelp() string {
+	return Catalog.Format(msgs.locale, "mcsHelp", nil)
+}
+
+// McsInstance says "Instance"
+// in the language the app shows.
+func McsInstance() string { return In(i18n.Locale()).McsInstance() }
+
+// McsInstance says "Instance"
+// in the language of msgs.
+func (msgs Messages) McsInstance() string {
+	return Catalog.Format(msgs.locale, "mcsInstance", nil)
+}
+
+// McsMode says "Mode"
+// in the language the app shows.
+func McsMode() string { return In(i18n.Locale()).McsMode() }
+
+// McsMode says "Mode"
+// in the language of msgs.
+func (msgs Messages) McsMode() string {
+	return Catalog.Format(msgs.locale, "mcsMode", nil)
+}
+
+// McsNewFolderTitle says "New folder"
+// in the language the app shows.
+func McsNewFolderTitle() string { return In(i18n.Locale()).McsNewFolderTitle() }
+
+// McsNewFolderTitle says "New folder"
+// in the language of msgs.
+func (msgs Messages) McsNewFolderTitle() string {
+	return Catalog.Format(msgs.locale, "mcsNewFolderTitle", nil)
+}
+
+// McsNoFiles says "This folder is empty"
+// in the language the app shows.
+func McsNoFiles() string { return In(i18n.Locale()).McsNoFiles() }
+
+// McsNoFiles says "This folder is empty"
+// in the language of msgs.
+func (msgs Messages) McsNoFiles() string {
+	return Catalog.Format(msgs.locale, "mcsNoFiles", nil)
+}
+
+// McsNoInstances says "This node has no instances"
+// in the language the app shows.
+func McsNoInstances() string { return In(i18n.Locale()).McsNoInstances() }
+
+// McsNoInstances says "This node has no instances"
+// in the language of msgs.
+func (msgs Messages) McsNoInstances() string {
+	return Catalog.Format(msgs.locale, "mcsNoInstances", nil)
+}
+
+// McsNoNodes says "No nodes are connected to this panel"
+// in the language the app shows.
+func McsNoNodes() string { return In(i18n.Locale()).McsNoNodes() }
+
+// McsNoNodes says "No nodes are connected to this panel"
+// in the language of msgs.
+func (msgs Messages) McsNoNodes() string {
+	return Catalog.Format(msgs.locale, "mcsNoNodes", nil)
+}
+
+// McsNode says "Node"
+// in the language the app shows.
+func McsNode() string { return In(i18n.Locale()).McsNode() }
+
+// McsNode says "Node"
+// in the language of msgs.
+func (msgs Messages) McsNode() string {
+	return Catalog.Format(msgs.locale, "mcsNode", nil)
+}
+
+// McsTableLabel says "Instance files"
+// in the language the app shows.
+func McsTableLabel() string { return In(i18n.Locale()).McsTableLabel() }
+
+// McsTableLabel says "Instance files"
+// in the language of msgs.
+func (msgs Messages) McsTableLabel() string {
+	return Catalog.Format(msgs.locale, "mcsTableLabel", nil)
+}
+
+// McsUp says "Up one level"
+// in the language the app shows.
+func McsUp() string { return In(i18n.Locale()).McsUp() }
+
+// McsUp says "Up one level"
+// in the language of msgs.
+func (msgs Messages) McsUp() string {
+	return Catalog.Format(msgs.locale, "mcsUp", nil)
+}
+
+// McsUploaded says "Uploaded {n, plural, one {# file} other {# files}}"
+// in the language the app shows.
+func McsUploaded(n int) string { return In(i18n.Locale()).McsUploaded(n) }
+
+// McsUploaded says "Uploaded {n, plural, one {# file} other {# files}}"
+// in the language of msgs.
+func (msgs Messages) McsUploaded(n int) string {
+	return Catalog.Format(msgs.locale, "mcsUploaded", map[string]any{"n": n})
 }
 
 // MenuBucket says "Bucket"
@@ -8340,21 +8590,21 @@ func (msgs Messages) ShellAddAccount() string {
 	return Catalog.Format(msgs.locale, "shellAddAccount", nil)
 }
 
-// ShellWelcomeSub says "Browse buckets and move files with AWS or any S3-compatible service"
+// ShellWelcomeSub says "Browse S3 buckets or MCSManager instance files"
 // in the language the app shows.
 func ShellWelcomeSub() string { return In(i18n.Locale()).ShellWelcomeSub() }
 
-// ShellWelcomeSub says "Browse buckets and move files with AWS or any S3-compatible service"
+// ShellWelcomeSub says "Browse S3 buckets or MCSManager instance files"
 // in the language of msgs.
 func (msgs Messages) ShellWelcomeSub() string {
 	return Catalog.Format(msgs.locale, "shellWelcomeSub", nil)
 }
 
-// ShellWelcomeTitle says "Connect an S3 account"
+// ShellWelcomeTitle says "Connect a storage account"
 // in the language the app shows.
 func ShellWelcomeTitle() string { return In(i18n.Locale()).ShellWelcomeTitle() }
 
-// ShellWelcomeTitle says "Connect an S3 account"
+// ShellWelcomeTitle says "Connect a storage account"
 // in the language of msgs.
 func (msgs Messages) ShellWelcomeTitle() string {
 	return Catalog.Format(msgs.locale, "shellWelcomeTitle", nil)
@@ -10176,6 +10426,26 @@ func ToolsMissing(name string) string { return In(i18n.Locale()).ToolsMissing(na
 // in the language of msgs.
 func (msgs Messages) ToolsMissing(name string) string {
 	return Catalog.Format(msgs.locale, "toolsMissing", map[string]any{"name": name})
+}
+
+// ToolsMcsLine says "Browse and manage instance files"
+// in the language the app shows.
+func ToolsMcsLine() string { return In(i18n.Locale()).ToolsMcsLine() }
+
+// ToolsMcsLine says "Browse and manage instance files"
+// in the language of msgs.
+func (msgs Messages) ToolsMcsLine() string {
+	return Catalog.Format(msgs.locale, "toolsMcsLine", nil)
+}
+
+// ToolsMcsTitle says "MCSManager"
+// in the language the app shows.
+func ToolsMcsTitle() string { return In(i18n.Locale()).ToolsMcsTitle() }
+
+// ToolsMcsTitle says "MCSManager"
+// in the language of msgs.
+func (msgs Messages) ToolsMcsTitle() string {
+	return Catalog.Format(msgs.locale, "toolsMcsTitle", nil)
 }
 
 // ToolsMultipartLine says "Unfinished uploads you can abort"

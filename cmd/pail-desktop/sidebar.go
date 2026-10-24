@@ -9,7 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-var toolIDs = []string{"sync", "cloudfront", "rules", "mime", "multipart", "settings"}
+var toolIDs = []string{"sync", "cloudfront", "mcs", "rules", "mime", "multipart", "settings"}
 
 // sidebar is the account switcher, the bucket list and the tool list.
 func (a *app) sidebar(c *ui.Context) {
@@ -154,6 +154,9 @@ func (a *app) sidebarItem(c *ui.Context, id string, icon *ui.SVG, name, region s
 }
 
 func (a *app) bucketList(c *ui.Context) {
+	if !a.hasCap(core.CapBucketList) {
+		return
+	}
 	k := tk(c)
 	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
 		sidebarLabel(c, locales.SidebarBuckets(), len(a.buckets), func() {

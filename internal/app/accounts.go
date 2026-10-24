@@ -50,7 +50,7 @@ func (s *Service) Accounts() []Account {
 	for i, r := range s.accounts {
 		out[i] = r.Account
 		out[i].CDNBuckets = append([]string(nil), r.CDNBuckets...) // nil stays nil
-		out[i].SecretMissing = r.Credentials == CredStatic && !r.HasSecret
+		out[i].SecretMissing = usesSecret(r.Credentials) && !r.HasSecret
 	}
 	return out
 }
@@ -137,6 +137,8 @@ func normalizeAccount(a Account) (Account, error) {
 			return a, errors.New("anonymous access cannot assume a role")
 		}
 		a.AccessKeyID, a.Profile = "", ""
+	case CredAPIKey:
+		a.AccessKeyID, a.Profile = "", ""
 	default:
 		return a, fmt.Errorf("unknown credentials type %q", a.Credentials)
 	}
@@ -152,9 +154,12 @@ func normalizeAccount(a Account) (Account, error) {
 	return a, nil
 }
 
+// usesSecret reports whether creds store a value in the keyring.
+func usesSecret(creds string) bool { return creds == CredStatic || creds == CredAPIKey }
+
 func validateSecrets(sec *Secrets) error {
 	if sec.SecretAccessKey == "" {
-		return errors.New("secret access key is required")
+		return errors.New("a secret is required")
 	}
 	return nil
 }
@@ -179,8 +184,8 @@ func (s *Service) SaveAccount(a Account, sec *Secrets) (Account, error) {
 		return Account{}, invalid(op, "%v", err)
 	}
 	if sec != nil {
-		if a.Credentials != CredStatic {
-			return Account{}, invalid(op, "secrets can only be stored for static credentials")
+		if !usesSecret(a.Credentials) {
+			return Account{}, invalid(op, "secrets can only be stored for credentials that use them")
 		}
 		if err := validateSecrets(sec); err != nil {
 			return Account{}, invalid(op, "%v", err)
@@ -210,10 +215,10 @@ func (s *Service) SaveAccount(a Account, sec *Secrets) (Account, error) {
 		rec.SecretGen, rec.HasSecret, rec.HasSession = old.SecretGen, old.HasSecret, old.HasSession
 	}
 	switch {
-	case a.Credentials != CredStatic:
+	case !usesSecret(a.Credentials):
 		rec.HasSecret, rec.HasSession = false, false
 	case sec == nil && !rec.HasSecret:
-		return Account{}, invalid(op, "a secret access key is required for static credentials")
+		return Account{}, invalid(op, "a secret is required for these credentials")
 	}
 
 	var written []string // keys created by step 1, for rollback
@@ -337,7 +342,7 @@ func (s *Service) TestAccount(ctx context.Context, a Account, sec *Secrets) erro
 		return invalid(op, "%v", err)
 	}
 	var secrets Secrets
-	if a.Credentials == CredStatic {
+	if usesSecret(a.Credentials) {
 		if sec != nil {
 			if err := validateSecrets(sec); err != nil {
 				return invalid(op, "%v", err)
@@ -346,7 +351,7 @@ func (s *Service) TestAccount(ctx context.Context, a Account, sec *Secrets) erro
 		} else {
 			rec, ok := s.account(a.ID)
 			if !ok || !rec.HasSecret {
-				return invalid(op, "a secret access key is required for static credentials")
+				return invalid(op, "a secret is required for these credentials")
 			}
 			if secrets, err = s.readSecrets(ctx, rec); err != nil {
 				return classify(op, err)
@@ -356,6 +361,16 @@ func (s *Service) TestAccount(ctx context.Context, a Account, sec *Secrets) erro
 	backend, err := backendFor(a.Provider)
 	if err != nil {
 		return invalid(op, "%v", err)
+	}
+	if tester, ok := backend.(Tester); ok {
+		ctx, cancel := context.WithTimeout(ctx, testAccountTimeout)
+		defer cancel()
+		err := tester.TestConnection(ctx, a, secrets)
+		var oe *OpError
+		if errors.As(err, &oe) {
+			return oe
+		}
+		return classify(op, err)
 	}
 	factory, ok := backend.(StorageFactory)
 	if !ok {

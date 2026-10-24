@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/DejavuMoe/Pail/internal/cloud"
+	"github.com/DejavuMoe/Pail/internal/mcsmanager"
 	"github.com/DejavuMoe/Pail/internal/storage"
 )
 
@@ -40,6 +41,12 @@ type CloudFactory interface {
 	NewCloud(ctx context.Context, cfg storage.Config, opts ...cloud.Option) (*cloud.Client, error)
 }
 
+// Tester is implemented by backends whose connection test is not an S3 call.
+// The backend owns the request; returning an *OpError keeps its kind.
+type Tester interface {
+	TestConnection(ctx context.Context, a Account, sec Secrets) error
+}
+
 // backendRegistry holds the registered plugins by provider ID. Registration
 // happens once at startup; the map is never written afterwards.
 var backendRegistry = map[string]Backend{}
@@ -47,6 +54,7 @@ var backendRegistry = map[string]Backend{}
 func init() {
 	registerBackend(awsBackend{})
 	registerBackend(s3Backend{})
+	registerBackend(mcsBackend{})
 }
 
 // registerBackend adds b to the registry. A duplicate or empty descriptor is a
@@ -187,4 +195,64 @@ func (awsBackend) NewStorage(ctx context.Context, cfg storage.Config) (*storage.
 
 func (awsBackend) NewCloud(ctx context.Context, cfg storage.Config, opts ...cloud.Option) (*cloud.Client, error) {
 	return cloud.New(ctx, cfg, opts...)
+}
+
+// mcsCapabilities are the MCSManager file manager operations Pail implements.
+var mcsCapabilities = NewCapabilitySet(
+	CapMCSInstanceList,
+	CapMCSFileList, CapMCSFileDownload, CapMCSFileUpload,
+	CapMCSFileDelete, CapMCSFileMkdir, CapMCSFileCopy, CapMCSFileMove,
+	CapMCSFileChmod, CapMCSFileArchive, CapMCSFileText,
+)
+
+// mcsBackend is the MCSManager panel plugin. It speaks the panel's HTTP API,
+// not S3, and therefore declares only the mcs.* capabilities.
+type mcsBackend struct{}
+
+func (mcsBackend) Descriptor() BackendDescriptor {
+	return BackendDescriptor{ID: ProviderMCS, Capabilities: mcsCapabilities}
+}
+
+func (mcsBackend) NormalizeAccount(a *Account) error {
+	if a.Endpoint == "" {
+		return errors.New("an MCSManager panel URL is required")
+	}
+	if a.Credentials != CredAPIKey {
+		return errors.New("MCSManager accounts use an API key")
+	}
+	if a.RoleARN != "" || a.ExternalID != "" || a.RoleSessionName != "" {
+		return errors.New("role settings do not apply to MCSManager")
+	}
+	if a.CDNURL != "" || len(a.CDNBuckets) > 0 {
+		return errors.New("CDN settings do not apply to MCSManager")
+	}
+	return nil
+}
+
+// TestConnection lists nodes, falling back to the global instance search for
+// API keys that are not administrators but can still see their instances.
+func (mcsBackend) TestConnection(ctx context.Context, a Account, sec Secrets) error {
+	const op = "TestAccount"
+	c, err := mcsmanager.New(mcsmanager.Config{
+		Endpoint:           a.Endpoint,
+		APIKey:             sec.SecretAccessKey,
+		InsecureSkipVerify: a.InsecureSkipVerify,
+	})
+	if err != nil {
+		return invalid(op, "%v", err)
+	}
+	if _, err := c.ListDaemons(ctx); err == nil {
+		return nil
+	} else if !isMCSAccessDenied(err) {
+		return mapMCS(op, err)
+	}
+	if _, err := c.ListAllInstances(ctx, 1, 1); err != nil {
+		return mapMCS(op, err)
+	}
+	return nil
+}
+
+func isMCSAccessDenied(err error) bool {
+	var ae *mcsmanager.APIError
+	return errors.As(err, &ae) && ae.AccessDenied()
 }

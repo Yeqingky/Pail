@@ -382,7 +382,7 @@ func (s *Service) PublicURL(loc Location, key string) string {
 	rec, ok := s.accountLocked(loc.AccountID)
 	region := s.bucketRegion[loc.AccountID+"/"+loc.Bucket]
 	s.mu.Unlock()
-	if !ok || loc.Bucket == "" {
+	if !ok || loc.Bucket == "" || !providerCapabilities(rec.Provider).Has(CapBucketList) {
 		return ""
 	}
 	if region == "" {

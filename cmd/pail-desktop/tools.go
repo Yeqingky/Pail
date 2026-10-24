@@ -11,6 +11,7 @@ import (
 var toolInfo = map[string]struct{ title, line func() string }{
 	"sync":       {locales.ToolsSyncTitle, locales.ToolsSyncLine},
 	"cloudfront": {locales.ToolsCloudfrontTitle, locales.ToolsCloudfrontLine},
+	"mcs":        {locales.ToolsMcsTitle, locales.ToolsMcsLine},
 	"rules":      {locales.ToolsRulesTitle, locales.ToolsRulesLine},
 	"mime":       {locales.ToolsMimeTitle, locales.ToolsMimeLine},
 	"multipart":  {locales.ToolsMultipartTitle, locales.ToolsMultipartLine},
@@ -34,6 +35,7 @@ type toolState struct {
 	mime    mimeState
 	mp      mpState
 	cf      cfState
+	mcs     mcsState
 	sync    syncState
 	secrets secretsState
 	tr      trAuto
@@ -50,6 +52,8 @@ func (a *app) toolSync() {
 	switch prev {
 	case "cloudfront":
 		a.cfLeave()
+	case "mcs":
+		a.mcsLeave()
 	}
 	switch a.tool {
 	case "rules":
@@ -60,6 +64,8 @@ func (a *app) toolSync() {
 		a.mpEnter()
 	case "cloudfront":
 		a.cfEnter()
+	case "mcs":
+		a.mcsEnter()
 	case "sync":
 		a.syncEnter()
 	}
@@ -104,6 +110,8 @@ func (a *app) toolView(c *ui.Context) {
 		a.mpView(c)
 	case "cloudfront":
 		a.cfView(c)
+	case "mcs":
+		a.mcsView(c)
 	case "sync":
 		a.syncView(c)
 	default:

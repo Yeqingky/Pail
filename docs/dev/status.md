@@ -33,7 +33,15 @@ VersityGW 已确认的行为：PutObject 与 CompleteMultipartUpload 遵守 `If-
 
 | 功能 | API | 界面 | 协议测试 | 真实端到端 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| 后端插件注册、能力声明与执行前校验 | ✅ `Backend`、`Backends`、`Capability`、`Service.Capabilities`、`Service.HasCapability` | ✅ 命令、工具栏、上下文菜单、命令面板、侧栏工具与检查器标签按能力显示 | ✅ `TestBackendsDeclareCapabilities`、`TestServiceCapabilitiesFollowTheBackend`、`TestServiceRejectsACapabilityTheBackendLacks`、`TestS3AccountHidesCloudFront`、`TestBackendWithoutCapabilitiesHidesItsSurfaces` | n/a 本地注册表 | 内置 `aws` 与 `s3`；暂不支持运行时加载第三方插件 |
+| 后端插件注册、能力声明与执行前校验 | ✅ `Backend`、`Backends`、`Capability`、`Service.Capabilities`、`Service.HasCapability` | ✅ 命令、工具栏、上下文菜单、命令面板、侧栏工具与检查器标签按能力显示 | ✅ `TestBackendsDeclareCapabilities`、`TestServiceCapabilitiesFollowTheBackend`、`TestServiceRejectsACapabilityTheBackendLacks`、`TestS3AccountHidesCloudFront`、`TestBackendWithoutCapabilitiesHidesItsSurfaces` | n/a 本地注册表 | 内置 `aws`、`s3` 与 `mcsmanager`；暂不支持运行时加载第三方插件 |
+
+### MCSManager 文件管理
+
+| 功能 | API | 界面 | 协议测试 | 真实端到端 | 备注 |
+| --- | --- | --- | --- | --- | --- |
+| 节点、实例与文件列表 | ✅ `MCSDaemons`、`MCSInstances`、`MCSFiles` | ✅ 侧栏工具与账户表单 | ✅ `internal/mcsmanager` 的 `TestListFilesSendsAuthAndParsesPage`、`TestListInstancesAndDaemons`；应用层 `TestMCSMDaemonsAndFiles`；界面 `TestMCSMToolListsInstancesAndFiles` | ❌ 未在真实面板安装上测试 | 节点列表需要管理员密钥；非管理员密钥退回全局实例搜索 |
+| 上传、下载、新建目录、删除 | ✅ `MCSUpload`、`MCSDownload`、`MCSMkdir`、`MCSDelete` | ✅ 文件工具工具栏 | ✅ `TestMCSMDownloadDoesNotOverwrite`、`TestMCSUploadSendsFiles`、`TestMCSFileMutationsReachThePanel` | ❌ 未在真实面板安装上测试 | 下载使用 one-time passport，临时文件无覆盖发布；上传发送 `overwrite=false` |
+| 复制、移动/重命名、权限、压缩/解压、文本读写 | ✅ `MCSCopy`、`MCSMove`、`MCSChmod`、`MCSCompress`、`MCSDecompress`、`MCSReadText`、`MCSWriteText` | ❌ 未接入界面 | ✅ 客户端请求体测试与服务层 `TestMCSFileMutationsReachThePanel` | ❌ | 面板未公开的行为不在能力声明中承诺 |
 
 ### 内存诊断与回收
 
