@@ -399,9 +399,9 @@ func (c *Client) ListFiles(ctx context.Context, daemonID, uuid, dir string, page
 	q.Set("target", target)
 	q.Set("page", strconv.Itoa(max(page, 0)))
 	q.Set("page_size", strconv.Itoa(clampFilePageSize(pageSize)))
-	if fileName != "" {
-		q.Set("file_name", fileName)
-	}
+	// The panel turns a missing file_name into the string "undefined" and
+	// filters every entry out. An empty value means "no filter".
+	q.Set("file_name", fileName)
 	var out FilePage
 	err := c.do(ctx, http.MethodGet, "/api/files/list", q, nil, &out)
 	out.Target = target

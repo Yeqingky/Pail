@@ -321,3 +321,21 @@ func TestMCSFilesKeepInstanceRelativePaths(t *testing.T) {
 		t.Fatalf("targets = %v, want the relative root twice", targets)
 	}
 }
+
+func TestMCSFilesSendAnEmptyNameFilter(t *testing.T) {
+	var hasFilter bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hasFilter = r.URL.Query().Has("file_name")
+		io.WriteString(w, `{"status":200,"data":{"items":[],"page":0,"pageSize":10,"total":0,"absolutePath":"/opt/mcsmanager/daemon/data/InstanceData/i1/"}}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	s := newTestService(t, nil)
+	a := newMCSAccount(t, s, srv.URL)
+	if _, err := s.MCSFiles(context.Background(), a.ID, "d1", "i1", "/", 0, 10, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !hasFilter {
+		t.Fatal("file_name was omitted; the panel would filter for the literal \"undefined\"")
+	}
+}

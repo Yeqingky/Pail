@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -326,5 +327,19 @@ func TestJSONBodyIsNotEscaped(t *testing.T) {
 	})
 	if err := c.Mkdir(context.Background(), "d1", "i1", "/a&b"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestListFilesAlwaysSendsTheNameFilter(t *testing.T) {
+	var q url.Values
+	c, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		q = r.URL.Query()
+		io.WriteString(w, `{"status":200,"data":{"items":[],"page":0,"pageSize":10,"total":0}}`)
+	})
+	if _, err := c.ListFiles(context.Background(), "d1", "i1", "/", 0, 10, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !q.Has("file_name") || q.Get("file_name") != "" {
+		t.Fatalf("file_name = %q, present = %v", q.Get("file_name"), q.Has("file_name"))
 	}
 }
