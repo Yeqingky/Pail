@@ -501,7 +501,7 @@ func (s *Service) MCSUpload(ctx context.Context, accountID, daemonID, uuid, remo
 ```
 
 - 每个方法先检查对应的 `mcs.*` 能力；MCSManager 账户不声明 S3 能力，S3 账户也不声明 `mcs.*`。
-- 面板请求把 API 密钥放在 `apikey` 查询参数；错误和日志不记录 URL。节点列表需要管理员密钥，非管理员账户退回全局实例搜索，节点名显示为节点 ID。
+- 面板请求把 API 密钥放在 `apikey` 查询参数；错误和日志不记录 URL。节点与实例列表需要管理员密钥；普通账户改由 `/api/auth?advanced=true` 读取分配给它的实例，按节点分组，节点名取备注或地址。面板拒绝请求时保留其文本说明（例如 API Key 未启用），界面在访问被拒时提示检查 API Key 与面板的 API 开关。
 - 下载和上传使用面板签发的 one-time passport；下载写入临时文件后无覆盖发布，重名时使用编号名；上传发送 `overwrite=false`，由守护进程保留已有文件。
 - `MCSDownload`/`MCSUpload` 是同步调用，界面必须在后台线程执行；它们暂不进入任务队列。
 - 该客户端只实现文档公开的文件接口；文档未给出的行为（例如目录复制的递归与冲突、下载任务进度）不在能力声明中承诺。

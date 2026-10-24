@@ -67,6 +67,7 @@ func TestPanelErrors(t *testing.T) {
 	}{
 		{"http 403", 403, `{"status":403,"data":"forbidden"}`, true, false, "forbidden"},
 		{"json 403", 200, `{"status":403,"data":"no access"}`, true, false, "no access"},
+		{"plain 403", 403, "API access is disabled", true, false, "API access is disabled"},
 		{"http 404", 404, `{"status":404,"data":"missing"}`, false, true, "missing"},
 	}
 	for _, tc := range cases {
@@ -116,6 +117,49 @@ func TestListInstancesAndDaemons(t *testing.T) {
 	page, err := c.ListInstances(context.Background(), "d1", 1, 10, "survival")
 	if err != nil || len(page.Data) != 1 || page.Data[0].UUID != "i1" || page.Data[0].Name() != "Survival" || page.Data[0].Status != 3 {
 		t.Fatalf("instances = %+v, err = %v", page, err)
+	}
+}
+
+func TestCurrentUser(t *testing.T) {
+	var got *http.Request
+	c, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r
+		io.WriteString(w, `{"status":200,"data":{"uuid":"u1","userName":"alice","permission":1,
+			"instances":[{"daemonId":"d1","instanceUuid":"i1","nickname":"Survival",
+			              "hostIp":"10.0.0.1:24444","remarks":"Node One","status":3}]},"time":1}`)
+	})
+	u, err := c.CurrentUser(context.Background(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.URL.Path != "/api/auth" || got.URL.Query().Get("advanced") != "true" || got.URL.Query().Get("apikey") != "secret" {
+		t.Fatalf("request = %s?%s", got.URL.Path, got.URL.RawQuery)
+	}
+	if u.UUID != "u1" || u.UserName != "alice" || u.Permission != 1 || len(u.Instances) != 1 {
+		t.Fatalf("user = %+v", u)
+	}
+	in := u.Instances[0]
+	if in.DaemonID != "d1" || in.UUID != "i1" || in.Nickname != "Survival" || in.HostIP != "10.0.0.1:24444" || in.Remarks != "Node One" || in.Status != 3 {
+		t.Fatalf("instance = %+v", in)
+	}
+}
+
+func TestNewTrimsTheAPIKey(t *testing.T) {
+	var key string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key = r.URL.Query().Get("apikey")
+		io.WriteString(w, `{"status":200,"data":[]}`)
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(Config{Endpoint: srv.URL, APIKey: "  secret\n", HTTPClient: srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ListDaemons(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if key != "secret" {
+		t.Fatalf("apikey = %q", key)
 	}
 }
 

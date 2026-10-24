@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	core "github.com/DejavuMoe/Pail/internal/app"
@@ -77,5 +78,58 @@ func TestMCSMToolListsInstancesAndFiles(t *testing.T) {
 	}
 	if !h.a.visible(h.a.cmd("tool.mcs")) {
 		t.Fatal("the MCSManager tool is hidden for its own account")
+	}
+}
+
+func TestMCSMToolFallsBackForNonAdminKeys(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("apikey") != "panel-key" {
+			t.Errorf("apikey = %q", r.URL.Query().Get("apikey"))
+		}
+		switch r.URL.Path {
+		case "/api/service/remote_services_list", "/api/service/remote_service_instances":
+			w.WriteHeader(http.StatusForbidden)
+			io.WriteString(w, "administrator only")
+		case "/api/auth":
+			if r.URL.Query().Get("advanced") != "true" {
+				t.Errorf("advanced = %q", r.URL.Query().Get("advanced"))
+			}
+			io.WriteString(w, `{"status":200,"data":{"uuid":"u1","userName":"alice","permission":1,
+				"instances":[{"daemonId":"d1","instanceUuid":"i1","nickname":"Survival","hostIp":"10.0.0.1:24444","remarks":"Node One","status":3}]}}`)
+		case "/api/files/list":
+			io.WriteString(w, `{"status":200,"data":{"items":[
+				{"name":"world","size":0,"time":"Fri Jun 07 2024 08:53:34 GMT+0800","mode":755,"type":0}],
+				"page":0,"pageSize":50,"total":1,"absolutePath":"/srv"}}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	h := newHarness(t, "light")
+	acct, err := h.env.Svc.SaveAccount(core.Account{
+		Name: "Panel", Provider: core.ProviderMCS, Endpoint: srv.URL, Credentials: core.CredAPIKey,
+	}, &core.Secrets{SecretAccessKey: "panel-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.a.refreshAccounts()
+	h.a.selectAccount(acct.ID)
+	h.waitFor("MCSManager files for a non-admin key", func() bool {
+		return len(h.a.tl.mcs.daemons) == 1 && len(h.a.tl.mcs.files) == 1
+	})
+	h.settle()
+
+	if h.a.tl.mcs.daemons[0].Name != "Node One" || h.a.tl.mcs.instances[0].Name != "Survival" {
+		t.Fatalf("daemons = %+v, instances = %+v", h.a.tl.mcs.daemons, h.a.tl.mcs.instances)
+	}
+	h.mustHave("Node One", "Survival", "/srv", "world")
+}
+
+func TestMCSAccessDeniedTextExplainsPanelAPI(t *testing.T) {
+	err := &core.OpError{Op: "TestAccount", Kind: core.ErrAccessDenied, Message: "API access is disabled"}
+	got := mcsErrorText(err)
+	if got == humanError(err) || !strings.Contains(got, "API access is disabled") {
+		t.Fatalf("text = %q", got)
 	}
 }

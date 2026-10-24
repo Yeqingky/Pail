@@ -564,6 +564,7 @@
   "mainPickFiles": "选择要上传的文件",
   "mainPickFolder": "选择文件夹",
   "mainTitleDemo": "Pail — 演示",
+  "mcsAccessDenied": "访问被拒绝。请检查 API Key，确认 MCSManager 已启用 API 访问，并确认该账户有权访问此实例。",
   "mcsDeleteMessage": "选中的文件和文件夹会在服务器上删除，且无法撤销。",
   "mcsDeleteTitle": "删除 {n, plural, other {# 项}}？",
   "mcsDeleted": "已删除 {n, plural, other {# 项}}",

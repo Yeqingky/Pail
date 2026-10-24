@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -59,6 +60,22 @@ func (m *mcsState) instanceName() string {
 	return m.instanceID
 }
 
+// mcsErrorText explains a panel access denial, which is usually about the API
+// key's account or the panel's API switch rather than the file being touched.
+func mcsErrorText(err error) string {
+	if core.KindOf(err) != core.ErrAccessDenied {
+		return humanError(err)
+	}
+	text := locales.McsAccessDenied()
+	var oe *core.OpError
+	if errors.As(err, &oe) {
+		if msg := strings.TrimSpace(oe.Message); msg != "" && msg != "the panel rejected the request" {
+			text += " (" + msg + ")"
+		}
+	}
+	return text
+}
+
 func mcsColumns() []ui.TableColumn {
 	return []ui.TableColumn{
 		{Title: locales.CommonName(), ID: "name", MinWidth: 200},
@@ -92,7 +109,7 @@ func (a *app) mcsLoadDaemons() {
 			}
 			m.loading = false
 			if err != nil {
-				m.err = humanError(err)
+				m.err = mcsErrorText(err)
 				return
 			}
 			m.daemons, m.daemonID = ds, ""
@@ -120,7 +137,7 @@ func (a *app) mcsLoadInstances() {
 			}
 			m.loading = false
 			if err != nil {
-				m.err = humanError(err)
+				m.err = mcsErrorText(err)
 				return
 			}
 			m.instances, m.instanceID = ins, ""
@@ -163,7 +180,7 @@ func (a *app) mcsFetchFiles(page int, appendRows bool) {
 			}
 			m.loading = false
 			if err != nil {
-				m.err = humanError(err)
+				m.err = mcsErrorText(err)
 				return
 			}
 			if appendRows {
@@ -414,7 +431,7 @@ func (a *app) mcsPickUpload() {
 				n, err := a.svc.MCSUpload(a.ctx, acct, daemon, instance, dir, paths)
 				return func() {
 					if err != nil {
-						a.toast(locales.McsFailed(humanError(err)))
+						a.toast(locales.McsFailed(mcsErrorText(err)))
 						return
 					}
 					a.toast(locales.McsUploaded(n))
@@ -442,7 +459,7 @@ func (a *app) mcsPickDownload() {
 				local, err := a.svc.MCSDownload(a.ctx, acct, daemon, instance, remote, dirs[0])
 				return func() {
 					if err != nil {
-						a.toast(locales.McsFailed(humanError(err)))
+						a.toast(locales.McsFailed(mcsErrorText(err)))
 						return
 					}
 					a.toast(locales.McsDownloaded(filepath.Base(local)))
@@ -472,7 +489,7 @@ func (a *app) mcsAskDelete() {
 				err := a.svc.MCSDelete(a.ctx, acct, daemon, instance, targets)
 				return func() {
 					if err != nil {
-						a.toast(locales.McsFailed(humanError(err)))
+						a.toast(locales.McsFailed(mcsErrorText(err)))
 						return
 					}
 					a.toast(locales.McsDeleted(len(targets)))
@@ -532,7 +549,7 @@ func (a *app) mcsCreateFolder() {
 		return func() {
 			m.folderBusy = false
 			if err != nil {
-				m.folderErr = humanError(err)
+				m.folderErr = mcsErrorText(err)
 				return
 			}
 			m.folderOpen = false

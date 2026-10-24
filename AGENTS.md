@@ -1,11 +1,10 @@
 # 项目开发约定
 
 - 源代码唯一位置是 Windows 当前仓库，只在 Windows 做 Git 写操作。
-- 主仓库是 Forgejo（`ssh://git@ssh.via.moe/dejavu/Pail.git`），每次推送自动镜像到 GitHub（`github.com/DejavuMoe/Pail`）。GitHub 只读，不在上面提交或合并。
 - Linux 编译与测试通过 `linux-task.ps1 -Mode build -Project <仓库根目录> -Command '...'`；同一镜像的 build 任务必须串行。
 
 ## 结构
-- `cmd/pail-desktop` 桌面界面（mygo）；`cmd/pail` 命令行；`internal/app` 应用编排；`internal/storage` S3 协议层；`internal/cloud` AWS 专有服务（CloudFront）。
+- `cmd/pail-desktop` 桌面界面（mygo）；`cmd/pail` 命令行；`internal/app` 应用编排与后端插件注册表、能力声明（`backend.go`、`capabilities.go`）；`internal/storage` S3 协议层；`internal/cloud` AWS 专有服务（CloudFront）；`internal/mcsmanager` MCSManager 面板 HTTP 客户端。
 - `internal/rules` 上传规则与压缩；`internal/safepath` 下载路径安全；`internal/trash` 本地回收站；`internal/s3test` 内存 S3 测试服务（`--demo` 也用它）。
 - `tools/genicons` 图标生成；`tools/release` 跨平台发布构建与验包入口，复用 `tools/pack` 和 `tools/verify-release`；`integration/` MinIO 与外部端点验收。架构与不变量见 `docs/dev/architecture.md`。
 - `site/` 与 `tools/site` 是 https://pail.download 的静态网站（Landing Page）；原型在 `designs/pail-site/`，部署流水线在 `.woodpecker/site.yml`，说明见 `docs/dev/site.md`。

@@ -229,8 +229,8 @@ func (mcsBackend) NormalizeAccount(a *Account) error {
 	return nil
 }
 
-// TestConnection lists nodes, falling back to the global instance search for
-// API keys that are not administrators but can still see their instances.
+// TestConnection lists nodes, falling back to the account endpoint for API
+// keys that are not administrators but can still see their instances.
 func (mcsBackend) TestConnection(ctx context.Context, a Account, sec Secrets) error {
 	const op = "TestAccount"
 	c, err := mcsmanager.New(mcsmanager.Config{
@@ -246,7 +246,7 @@ func (mcsBackend) TestConnection(ctx context.Context, a Account, sec Secrets) er
 	} else if !isMCSAccessDenied(err) {
 		return mapMCS(op, err)
 	}
-	if _, err := c.ListAllInstances(ctx, 1, 1); err != nil {
+	if _, err := c.CurrentUser(ctx, false); err != nil {
 		return mapMCS(op, err)
 	}
 	return nil

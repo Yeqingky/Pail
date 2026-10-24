@@ -66,14 +66,15 @@ func New(cfg Config) (*Client, error) {
 		base.User != nil || base.RawQuery != "" || base.Fragment != "" {
 		return nil, errors.New("endpoint must be an http(s) URL without credentials, query or fragment")
 	}
-	if strings.TrimSpace(cfg.APIKey) == "" {
+	key := strings.TrimSpace(cfg.APIKey)
+	if key == "" {
 		return nil, errors.New("an API key is required")
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
 		hc = NewHTTPClient(cfg.InsecureSkipVerify)
 	}
-	return &Client{base: base, key: cfg.APIKey, hc: hc}, nil
+	return &Client{base: base, key: key, hc: hc}, nil
 }
 
 // APIError is a panel answer that is not a success. HTTPStatus is the transport
@@ -153,6 +154,24 @@ func (c *Client) do(ctx context.Context, method, route string, q url.Values, bod
 		if json.Unmarshal(r.Data, &s) == nil {
 			msg = s
 		}
+		if strings.TrimSpace(msg) == "" && len(raw) > 0 {
+			// The permission middleware answers with a plain localized
+			// string, and some routes use message or msg in a JSON body.
+			if json.Valid(raw) {
+				var e struct {
+					Message string `json:"message"`
+					Msg     string `json:"msg"`
+				}
+				_ = json.Unmarshal(raw, &e)
+				msg = strings.TrimSpace(e.Message)
+				if msg == "" {
+					msg = strings.TrimSpace(e.Msg)
+				}
+			}
+			if msg == "" {
+				msg = shortText(raw)
+			}
+		}
 		return &APIError{HTTPStatus: res.StatusCode, Status: r.Status, Message: msg}
 	}
 	if out != nil {
@@ -174,6 +193,15 @@ func redactURLError(err error) error {
 		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
 	}
 	return err
+}
+
+// shortText keeps an error body readable in one notice.
+func shortText(b []byte) string {
+	r := []rune(strings.TrimSpace(string(b)))
+	if len(r) > 300 {
+		return string(r[:300]) + "…"
+	}
+	return string(r)
 }
 
 // ---- nodes and instances -------------------------------------------------
@@ -220,13 +248,6 @@ type InstancePage struct {
 	Data     []Instance `json:"data"`
 }
 
-// GlobalInstancePage is one node's entry in the global instance search.
-type GlobalInstancePage struct {
-	Instances []Instance `json:"instances"`
-	MaxPage   int        `json:"maxPage"`
-	Page      int        `json:"page"`
-}
-
 // ListDaemons returns the connected nodes. It requires an administrator API key.
 func (c *Client) ListDaemons(ctx context.Context) ([]Daemon, error) {
 	var out []Daemon
@@ -234,14 +255,37 @@ func (c *Client) ListDaemons(ctx context.Context) ([]Daemon, error) {
 	return out, err
 }
 
-// ListAllInstances searches instances on every node. The map is keyed by node
-// UUID. It is the fallback for API keys that cannot list nodes.
-func (c *Client) ListAllInstances(ctx context.Context, page, pageSize int) (map[string]GlobalInstancePage, error) {
-	q := url.Values{}
-	q.Set("page", strconv.Itoa(max(page, 1)))
-	q.Set("page_size", strconv.Itoa(clampPageSize(pageSize)))
-	var out map[string]GlobalInstancePage
-	err := c.do(ctx, http.MethodGet, "/api/service/remote_services_instances_global", q, nil, &out)
+// UserInstance is one instance assigned to the API key's account. The panel
+// fills nickname, hostIp, remarks and status when advanced is true; the basic
+// answer only carries instanceUuid and daemonId.
+type UserInstance struct {
+	DaemonID string `json:"daemonId"`
+	UUID     string `json:"instanceUuid"`
+	Nickname string `json:"nickname"`
+	HostIP   string `json:"hostIp"`
+	Remarks  string `json:"remarks"`
+	Status   int    `json:"status"`
+}
+
+// User is the account an API key belongs to, as /api/auth returns it.
+type User struct {
+	UUID       string         `json:"uuid"`
+	UserName   string         `json:"userName"`
+	Permission int            `json:"permission"`
+	Instances  []UserInstance `json:"instances"`
+}
+
+// CurrentUser returns the account behind the API key and the instances
+// assigned to it. Node and instance lists require an administrator; a regular
+// account reaches its instances through this endpoint instead. advanced asks
+// the panel to query each node for the instance nickname and status.
+func (c *Client) CurrentUser(ctx context.Context, advanced bool) (User, error) {
+	var q url.Values
+	if advanced {
+		q = url.Values{"advanced": {"true"}}
+	}
+	var out User
+	err := c.do(ctx, http.MethodGet, "/api/auth", q, nil, &out)
 	return out, err
 }
 

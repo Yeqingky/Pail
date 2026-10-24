@@ -5742,6 +5742,16 @@ func (msgs Messages) MainTitleDemo() string {
 	return Catalog.Format(msgs.locale, "mainTitleDemo", nil)
 }
 
+// McsAccessDenied says "Access denied. Check the API key and that API access is enabled in MCSManager; the account also needs permission for …"
+// in the language the app shows.
+func McsAccessDenied() string { return In(i18n.Locale()).McsAccessDenied() }
+
+// McsAccessDenied says "Access denied. Check the API key and that API access is enabled in MCSManager; the account also needs permission for …"
+// in the language of msgs.
+func (msgs Messages) McsAccessDenied() string {
+	return Catalog.Format(msgs.locale, "mcsAccessDenied", nil)
+}
+
 // McsDeleteMessage says "The selected files and folders are deleted on the server. This cannot be undone."
 // in the language the app shows.
 func McsDeleteMessage() string { return In(i18n.Locale()).McsDeleteMessage() }

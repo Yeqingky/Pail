@@ -79,8 +79,8 @@ func mapMCS(op string, err error) error {
 	return classify(op, err)
 }
 
-// MCSDaemons lists the nodes the account may see. A non-admin API key gets a
-// best-effort list from the global instance search, keyed by node ID.
+// MCSDaemons lists the nodes the account may see. A non-admin API key gets
+// its assigned instances from the account endpoint, grouped by node ID.
 func (s *Service) MCSDaemons(ctx context.Context, accountID string) ([]MCSDaemon, error) {
 	const op = "MCSDaemons"
 	if err := s.requireCapability(op, accountID, CapMCSInstanceList); err != nil {
@@ -100,31 +100,63 @@ func (s *Service) MCSDaemons(ctx context.Context, accountID string) ([]MCSDaemon
 			}
 			out = append(out, MCSDaemon{ID: d.UUID, Name: name, Address: net.JoinHostPort(d.IP, strconv.Itoa(d.Port)), Available: d.Available})
 		}
-		sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
+		sort.SliceStable(out, func(i, j int) bool {
+			a, b := strings.ToLower(out[i].Name), strings.ToLower(out[j].Name)
+			if a != b {
+				return a < b
+			}
+			return out[i].ID < out[j].ID
+		})
 		return out, nil
 	}
 	if !isMCSAccessDenied(err) {
 		return nil, mapMCS(op, err)
 	}
-	ids := map[string]bool{}
-	maxPage := 1
-	for page := 1; page <= maxPage; page++ {
-		pages, err := c.ListAllInstances(ctx, page, 50)
-		if err != nil {
-			return nil, mapMCS(op, err)
+	u, err := c.CurrentUser(ctx, true)
+	if err != nil {
+		return nil, mapMCS(op, err)
+	}
+	type node struct{ name, addr string }
+	nodes := map[string]*node{}
+	for _, in := range u.Instances {
+		id := strings.TrimSpace(in.DaemonID)
+		if id == "" {
+			continue
 		}
-		for id, p := range pages {
-			ids[id] = true
-			if p.MaxPage > maxPage {
-				maxPage = p.MaxPage
+		n := nodes[id]
+		if n == nil {
+			n = &node{}
+			nodes[id] = n
+		}
+		if n.addr == "" {
+			n.addr = strings.TrimSpace(in.HostIP)
+			if n.addr == "-- Unknown --" {
+				n.addr = ""
+			}
+		}
+		if n.name == "" {
+			if r := strings.TrimSpace(in.Remarks); r != "" {
+				n.name = r
+			} else if n.addr != "" {
+				n.name = n.addr
 			}
 		}
 	}
-	out := make([]MCSDaemon, 0, len(ids))
-	for id := range ids {
-		out = append(out, MCSDaemon{ID: id, Name: id, Available: true})
+	out := make([]MCSDaemon, 0, len(nodes))
+	for id, n := range nodes {
+		name := n.name
+		if name == "" {
+			name = id
+		}
+		out = append(out, MCSDaemon{ID: id, Name: name, Address: n.addr, Available: true})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := strings.ToLower(out[i].Name), strings.ToLower(out[j].Name)
+		if a != b {
+			return a < b
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out, nil
 }
 
@@ -140,11 +172,50 @@ func (s *Service) MCSInstances(ctx context.Context, accountID, daemonID string, 
 	}
 	p, err := c.ListInstances(ctx, daemonID, page, pageSize, "")
 	if err != nil {
-		return nil, mapMCS(op, err)
+		if !isMCSAccessDenied(err) {
+			return nil, mapMCS(op, err)
+		}
+		return mcsUserInstances(ctx, c, daemonID, page, pageSize)
 	}
 	out := make([]MCSInstance, 0, len(p.Data))
 	for _, in := range p.Data {
 		out = append(out, MCSInstance{DaemonID: daemonID, UUID: in.UUID, Name: in.Name(), Status: in.Status})
+	}
+	return out, nil
+}
+
+// mcsUserInstances lists the instances a non-administrator API key can see.
+// The account endpoint has no pagination, so the page is cut here.
+func mcsUserInstances(ctx context.Context, c *mcsmanager.Client, daemonID string, page, pageSize int) ([]MCSInstance, error) {
+	u, err := c.CurrentUser(ctx, true)
+	if err != nil {
+		return nil, mapMCS("MCSInstances", err)
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 50
+	}
+	start := (page - 1) * pageSize
+	out := make([]MCSInstance, 0, pageSize)
+	matched := 0
+	for _, in := range u.Instances {
+		if strings.TrimSpace(in.DaemonID) != daemonID || strings.TrimSpace(in.UUID) == "" {
+			continue
+		}
+		matched++
+		if matched <= start {
+			continue
+		}
+		if len(out) == pageSize {
+			break
+		}
+		name := strings.TrimSpace(in.Nickname)
+		if name == "" || name == "-- Unknown --" {
+			name = in.UUID
+		}
+		out = append(out, MCSInstance{DaemonID: daemonID, UUID: in.UUID, Name: name, Status: in.Status})
 	}
 	return out, nil
 }

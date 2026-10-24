@@ -189,9 +189,13 @@ func TestMCSConnectionFallsBackForNonAdminKeys(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/service/remote_services_list":
 			w.WriteHeader(http.StatusForbidden)
-			io.WriteString(w, `{"status":403,"data":"admin only"}`)
-		case "/api/service/remote_services_instances_global":
-			io.WriteString(w, `{"status":200,"data":{"d1":{"instances":[],"maxPage":1,"page":1}}}`)
+			io.WriteString(w, "API access is disabled")
+		case "/api/auth":
+			if r.URL.Query().Get("advanced") != "" {
+				t.Errorf("connection test asked for advanced data")
+			}
+			io.WriteString(w, `{"status":200,"data":{"uuid":"u1","userName":"alice","permission":1,
+				"instances":[{"daemonId":"d1","instanceUuid":"i1"}]}}`)
 		default:
 			t.Errorf("path = %q", r.URL.Path)
 		}
@@ -200,5 +204,82 @@ func TestMCSConnectionFallsBackForNonAdminKeys(t *testing.T) {
 	s := newTestService(t, nil)
 	if err := s.TestAccount(context.Background(), Account{Name: "panel", Provider: ProviderMCS, Endpoint: srv.URL, Credentials: CredAPIKey}, &Secrets{SecretAccessKey: "x"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMCSNonAdminListsAssignedInstances(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/service/remote_services_list", "/api/service/remote_service_instances":
+			w.WriteHeader(http.StatusForbidden)
+			io.WriteString(w, "administrator only")
+		case "/api/auth":
+			if r.URL.Query().Get("advanced") != "true" {
+				t.Errorf("advanced = %q", r.URL.Query().Get("advanced"))
+			}
+			io.WriteString(w, `{"status":200,"data":{"uuid":"u1","userName":"alice","permission":1,
+				"instances":[
+					{"daemonId":"d1","instanceUuid":"i1","nickname":"Survival","hostIp":"10.0.0.1:24444","remarks":"Node One","status":3},
+					{"daemonId":"d1","instanceUuid":"i2","nickname":"Creative","hostIp":"10.0.0.1:24444","remarks":"Node One","status":1},
+					{"daemonId":"d2","instanceUuid":"i3","nickname":"","hostIp":"10.0.0.2:24445","remarks":"","status":0}
+				]}}`)
+		default:
+			t.Errorf("path = %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	s := newTestService(t, nil)
+	a := newMCSAccount(t, s, srv.URL)
+	ctx := context.Background()
+
+	ds, err := s.MCSDaemons(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]MCSDaemon{}
+	for _, d := range ds {
+		byID[d.ID] = d
+	}
+	if len(ds) != 2 ||
+		byID["d1"].Name != "Node One" || byID["d1"].Address != "10.0.0.1:24444" ||
+		byID["d2"].Name != "10.0.0.2:24445" || byID["d2"].Address != "10.0.0.2:24445" {
+		t.Fatalf("daemons = %+v", ds)
+	}
+
+	ins, err := s.MCSInstances(ctx, a.ID, "d1", 1, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ins) != 2 || ins[0].UUID != "i1" || ins[0].Name != "Survival" || ins[0].Status != 3 ||
+		ins[1].UUID != "i2" || ins[1].Name != "Creative" || ins[1].Status != 1 {
+		t.Fatalf("instances = %+v", ins)
+	}
+
+	page, err := s.MCSInstances(ctx, a.ID, "d1", 2, 1)
+	if err != nil || len(page) != 1 || page[0].UUID != "i2" {
+		t.Fatalf("page 2 = %+v, err = %v", page, err)
+	}
+
+	fallback, err := s.MCSInstances(ctx, a.ID, "d2", 1, 50)
+	if err != nil || len(fallback) != 1 || fallback[0].UUID != "i3" || fallback[0].Name != "i3" {
+		t.Fatalf("unnamed instance = %+v, err = %v", fallback, err)
+	}
+}
+
+func TestMCSAccessDeniedKeepsThePanelReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		io.WriteString(w, "API Key is not enabled")
+	}))
+	t.Cleanup(srv.Close)
+	s := newTestService(t, nil)
+	a := newMCSAccount(t, s, srv.URL)
+	_, err := s.MCSDaemons(context.Background(), a.ID)
+	if !IsKind(err, ErrAccessDenied) {
+		t.Fatalf("err = %v, want AccessDenied", err)
+	}
+	if !strings.Contains(err.Error(), "API Key is not enabled") {
+		t.Fatalf("err = %v, want the panel's reason", err)
 	}
 }

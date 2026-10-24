@@ -39,7 +39,7 @@ VersityGW 已确认的行为：PutObject 与 CompleteMultipartUpload 遵守 `If-
 
 | 功能 | API | 界面 | 协议测试 | 真实端到端 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| 节点、实例与文件列表 | ✅ `MCSDaemons`、`MCSInstances`、`MCSFiles` | ✅ 侧栏工具与账户表单 | ✅ `internal/mcsmanager` 的 `TestListFilesSendsAuthAndParsesPage`、`TestListInstancesAndDaemons`；应用层 `TestMCSMDaemonsAndFiles`；界面 `TestMCSMToolListsInstancesAndFiles` | ❌ 未在真实面板安装上测试 | 节点列表需要管理员密钥；非管理员密钥退回全局实例搜索 |
+| 节点、实例与文件列表 | ✅ `MCSDaemons`、`MCSInstances`、`MCSFiles` | ✅ 侧栏工具与账户表单 | ✅ `internal/mcsmanager` 的 `TestListFilesSendsAuthAndParsesPage`、`TestListInstancesAndDaemons`、`TestCurrentUser`、`TestPanelErrors`；应用层 `TestMCSMDaemonsAndFiles`、`TestMCSNonAdminListsAssignedInstances`；界面 `TestMCSMToolListsInstancesAndFiles`、`TestMCSMToolFallsBackForNonAdminKeys` | ⚠️ 已用真实面板验证非管理员密钥的 `/api/auth?advanced=true` 与 `/api/files/list`；未通过 Pail 界面走完整流程 | 节点与实例列表需要管理员密钥；普通密钥通过账户接口读取分配的实例，节点名取备注或地址 |
 | 上传、下载、新建目录、删除 | ✅ `MCSUpload`、`MCSDownload`、`MCSMkdir`、`MCSDelete` | ✅ 文件工具工具栏 | ✅ `TestMCSMDownloadDoesNotOverwrite`、`TestMCSUploadSendsFiles`、`TestMCSFileMutationsReachThePanel` | ❌ 未在真实面板安装上测试 | 下载使用 one-time passport，临时文件无覆盖发布；上传发送 `overwrite=false` |
 | 复制、移动/重命名、权限、压缩/解压、文本读写 | ✅ `MCSCopy`、`MCSMove`、`MCSChmod`、`MCSCompress`、`MCSDecompress`、`MCSReadText`、`MCSWriteText` | ❌ 未接入界面 | ✅ 客户端请求体测试与服务层 `TestMCSFileMutationsReachThePanel` | ❌ | 面板未公开的行为不在能力声明中承诺 |
 

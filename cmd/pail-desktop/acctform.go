@@ -259,11 +259,15 @@ func (a *app) testAccount() {
 				return
 			}
 			if err != nil {
-				a.af.test, a.af.testMsg = testFailed, a.noteErr(err, "acct-test", func() {
+				msg := a.noteErr(err, "acct-test", func() {
 					if a.af.open {
 						a.testAccount()
 					}
 				})
+				if ac.Provider == core.ProviderMCS && core.KindOf(err) == core.ErrAccessDenied {
+					msg = mcsErrorText(err)
+				}
+				a.af.test, a.af.testMsg = testFailed, msg
 				return
 			}
 			a.af.test, a.af.testMsg = testOK, ""
