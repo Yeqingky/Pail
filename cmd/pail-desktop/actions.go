@@ -39,9 +39,11 @@ func (a *app) timeout(d time.Duration) (context.Context, context.CancelFunc) {
 // outcome and refreshes the listing when it changed the bucket.
 type watch struct {
 	loc  Scope
-	kind string // "upload" | "download" | "delete"
+	kind string // "upload" | "download" | "delete" | "mcs-upload"
 	dest string // download folder
 	file string // the single downloaded file, when exactly one was asked for
+	// mcs-upload refreshes the panel listing when these still describe it.
+	mcsAccount, mcsDaemon, mcsInstance string
 }
 
 // addWatch starts following key (a group ID or task ID). Events that arrived
@@ -109,7 +111,22 @@ func (a *app) finishWatch(w *watch, ts []Task, result core.TaskGroupResult, grou
 	if w.loc.AccountID == a.scope.AccountID && w.loc.Bucket == a.scope.Bucket && a.scope.Bucket != "" {
 		a.reload()
 	}
+	if w.kind == "mcs-upload" && a.tool == "mcs" && a.accountID == w.mcsAccount &&
+		a.tl.mcs.daemonID == w.mcsDaemon && a.tl.mcs.instanceID == w.mcsInstance {
+		a.mcsLoadFiles()
+	}
 	switch w.kind {
+	case "mcs-upload":
+		switch {
+		case failed > 0:
+			a.toast(locales.ActionsUploadErrors(fmt.Sprint(done), fmt.Sprint(failed)))
+		case done > 0:
+			a.toast(locales.McsUploaded(done))
+		case canceled > 0:
+			a.toast(locales.ActionsUploadCanceled())
+		default:
+			a.toast(locales.ActionsNothingUploaded())
+		}
 	case "upload":
 		switch {
 		case failed > 0:

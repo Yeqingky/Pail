@@ -582,8 +582,9 @@ func (c *Client) Download(ctx context.Context, p Passport, fileName string, w io
 }
 
 // Upload posts one local file to uploadDir. overwrite=false lets the daemon
-// keep an existing file under a new name.
-func (c *Client) Upload(ctx context.Context, daemonID, uuid, uploadDir, localPath string, overwrite bool) error {
+// keep an existing file under a new name. progress, when not nil, receives the
+// number of file bytes read so far.
+func (c *Client) Upload(ctx context.Context, daemonID, uuid, uploadDir, localPath string, overwrite bool, progress func(int64)) error {
 	f, err := os.Open(localPath)
 	if err != nil {
 		return err
@@ -597,7 +598,11 @@ func (c *Client) Upload(ctx context.Context, daemonID, uuid, uploadDir, localPat
 	if err != nil {
 		return err
 	}
-	body, ct := multipartFile("file", filepath.Base(localPath), f)
+	var src io.Reader = f
+	if progress != nil {
+		src = &progressReader{r: f, fn: progress}
+	}
+	body, ct := multipartFile("file", filepath.Base(localPath), src)
 	if !overwrite {
 		q, _ := url.Parse(u)
 		vals := q.Query()
@@ -639,6 +644,22 @@ func cleanTarget(p string) string {
 }
 
 var winDrive = regexp.MustCompile(`^[A-Za-z]:`)
+
+// progressReader reports cumulative bytes read from r.
+type progressReader struct {
+	r  io.Reader
+	n  int64
+	fn func(int64)
+}
+
+func (p *progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	if n > 0 {
+		p.n += int64(n)
+		p.fn(p.n)
+	}
+	return n, err
+}
 
 // multipartFile streams r as one multipart/form-data file field.
 func multipartFile(field, name string, r io.Reader) (io.Reader, string) {

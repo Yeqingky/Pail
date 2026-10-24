@@ -428,14 +428,16 @@ func (a *app) mcsPickUpload() {
 		}
 		a.post(func() {
 			a.bg(func() func() {
-				n, err := a.svc.MCSUpload(a.ctx, acct, daemon, instance, dir, paths)
+				gid, err := a.svc.MCSUpload(a.ctx, acct, daemon, instance, dir, paths)
 				return func() {
 					if err != nil {
 						a.toast(locales.McsFailed(mcsErrorText(err)))
 						return
 					}
-					a.toast(locales.McsUploaded(n))
-					a.mcsLoadFiles()
+					a.transfersOpen, a.transTab = true, 0
+					a.addWatch(gid, &watch{
+						kind: "mcs-upload", mcsAccount: acct, mcsDaemon: daemon, mcsInstance: instance,
+					})
 				}
 			})
 		})

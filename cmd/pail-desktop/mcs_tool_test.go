@@ -4,6 +4,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -138,4 +140,75 @@ func TestMCSAccessDeniedTextExplainsPanelAPI(t *testing.T) {
 	if got == humanError(err) || !strings.Contains(got, "API access is disabled") {
 		t.Fatalf("text = %q", got)
 	}
+}
+
+func TestMCSMToolUploadShowsATransferTask(t *testing.T) {
+	var uploaded string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/service/remote_services_list":
+			io.WriteString(w, `{"status":200,"data":[{"uuid":"d1","ip":"10.0.0.1","port":24444,"available":true,"remarks":"Node One"}]}`)
+		case "/api/service/remote_service_instances":
+			io.WriteString(w, `{"status":200,"data":{"page":1,"pageSize":10,"maxPage":1,"data":[{"instanceUuid":"i1","status":3,"config":{"nickname":"Survival"}}]}}`)
+		case "/api/files/list":
+			io.WriteString(w, `{"status":200,"data":{"items":[],"page":0,"pageSize":100,"total":0,"absolutePath":"/opt/mcsmanager/daemon/data/InstanceData/i1/"}}`)
+		case "/api/files/upload":
+			if r.URL.Query().Get("upload_dir") != "/" {
+				t.Errorf("upload_dir = %q", r.URL.Query().Get("upload_dir"))
+			}
+			io.WriteString(w, `{"status":200,"data":{"password":"pw","addr":"ws://`+r.Host+`"}}`)
+		case "/upload/pw":
+			f, h, err := r.FormFile("file")
+			if err != nil {
+				t.Errorf("file field: %v", err)
+				return
+			}
+			defer f.Close()
+			b, _ := io.ReadAll(f)
+			uploaded = h.Filename + ":" + string(b)
+			io.WriteString(w, "OK")
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	h := newHarness(t, "light")
+	acct, err := h.env.Svc.SaveAccount(core.Account{
+		Name: "Panel", Provider: core.ProviderMCS, Endpoint: srv.URL, Credentials: core.CredAPIKey,
+	}, &core.Secrets{SecretAccessKey: "panel-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.a.refreshAccounts()
+	h.a.selectAccount(acct.ID)
+	h.waitFor("MCSManager files", func() bool {
+		return len(h.a.tl.mcs.daemons) == 1 && len(h.a.tl.mcs.instances) == 1 && !h.a.tl.mcs.loading
+	})
+
+	local := filepath.Join(t.TempDir(), "eula.txt")
+	if err := os.WriteFile(local, []byte("eula=true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.a.pick = func(bool) []string { return []string{local} }
+	h.a.mcsPickUpload()
+	h.waitFor("MCS upload task", func() bool {
+		for _, tk := range h.a.tasks {
+			if tk.Title == "Upload eula.txt" && tk.Status == core.StatusSucceeded {
+				return len(h.a.watches) == 0 && !h.a.tl.mcs.loading
+			}
+		}
+		return false
+	})
+	h.settle()
+
+	if !h.a.transfersOpen {
+		t.Fatal("the transfers panel did not open")
+	}
+	if uploaded != "eula.txt:eula=true\n" {
+		t.Fatalf("uploaded = %q", uploaded)
+	}
+	h.a.transTab = 1 // completed
+	h.settle()
+	h.mustHave("Upload eula.txt", "→ /eula.txt")
 }

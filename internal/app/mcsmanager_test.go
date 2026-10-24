@@ -106,7 +106,7 @@ func TestMCSMDownloadDoesNotOverwrite(t *testing.T) {
 	}
 }
 
-func TestMCSUploadSendsFiles(t *testing.T) {
+func TestMCSUploadQueuesTasks(t *testing.T) {
 	var uploaded string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -114,7 +114,7 @@ func TestMCSUploadSendsFiles(t *testing.T) {
 			if r.URL.Query().Get("upload_dir") != "/srv" {
 				t.Errorf("upload_dir = %q", r.URL.Query().Get("upload_dir"))
 			}
-			json.NewEncoder(w).Encode(map[string]any{"status": 200, "data": map[string]string{"password": "pw", "addr": r.Host}})
+			json.NewEncoder(w).Encode(map[string]any{"status": 200, "data": map[string]string{"password": "pw", "addr": "ws://" + r.Host}})
 		case r.URL.Path == "/upload/pw":
 			if r.URL.Query().Get("overwrite") != "false" {
 				t.Errorf("overwrite = %q", r.URL.Query().Get("overwrite"))
@@ -140,12 +140,29 @@ func TestMCSUploadSendsFiles(t *testing.T) {
 	if err := os.WriteFile(local, []byte("motd=Pail\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	n, err := s.MCSUpload(context.Background(), a.ID, "d1", "i1", "/srv", []string{local})
-	if err != nil || n != 1 {
-		t.Fatalf("upload = %d, %v", n, err)
+	gid, err := s.MCSUpload(context.Background(), a.ID, "d1", "i1", "/srv", []string{local})
+	if err != nil || gid == "" {
+		t.Fatalf("upload group = %q, %v", gid, err)
+	}
+	eventually(t, "MCS upload task", func() bool {
+		r, ok := s.TaskGroup(gid)
+		return ok && r.Pending == 0
+	})
+	var task Task
+	for _, tk := range s.Tasks() {
+		if tk.GroupID == gid {
+			task = tk
+		}
+	}
+	if task.Status != StatusSucceeded || task.Kind != KindUpload || task.Title != "Upload server.properties" ||
+		task.Detail != "→ /srv/server.properties" || task.BytesTotal != 10 || task.BytesDone != 10 || task.ItemsDone != 1 {
+		t.Fatalf("task = %+v", task)
 	}
 	if uploaded != "server.properties:motd=Pail\n" {
 		t.Fatalf("uploaded = %q", uploaded)
+	}
+	if result, ok := s.TaskGroup(gid); !ok || result.Succeeded != 1 || result.Failed != 0 {
+		t.Fatalf("group = %+v, %v", result, ok)
 	}
 }
 

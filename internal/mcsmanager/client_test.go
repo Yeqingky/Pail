@@ -231,7 +231,7 @@ func TestUploadStreamsMultipart(t *testing.T) {
 	if err := os.WriteFile(local, []byte("eula=true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Upload(context.Background(), "d1", "i1", "/srv/world", local, false); err != nil {
+	if err := c.Upload(context.Background(), "d1", "i1", "/srv/world", local, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if uploadName != "eula.txt" || uploadBody != "eula=true\n" || overwrite != "false" {

@@ -484,37 +484,77 @@ func (s *Service) MCSDownload(ctx context.Context, accountID, daemonID, uuid, re
 	return final, nil
 }
 
-// MCSUpload uploads regular files into remoteDir and returns how many were
-// sent. The daemon keeps an existing file under a new name when overwrite is
-// false.
-func (s *Service) MCSUpload(ctx context.Context, accountID, daemonID, uuid, remoteDir string, localPaths []string) (int, error) {
+// MCSUpload queues one KindUpload task per regular file and returns the group
+// ID. The daemon keeps an existing file under a new name when overwrite is
+// false. The page shows the tasks in the transfer panel; each reports bytes
+// read and its remote path.
+func (s *Service) MCSUpload(ctx context.Context, accountID, daemonID, uuid, remoteDir string, localPaths []string) (string, error) {
 	const op = "MCSUpload"
 	if err := s.requireCapability(op, accountID, CapMCSFileUpload); err != nil {
-		return 0, err
+		return "", err
 	}
 	if len(localPaths) == 0 {
-		return 0, invalid(op, "no files were selected")
+		return "", invalid(op, "no files were selected")
 	}
 	c, err := s.mcsClient(ctx, accountID)
 	if err != nil {
-		return 0, mapMCS(op, err)
+		return "", mapMCS(op, err)
 	}
-	n := 0
+	files := make([]string, 0, len(localPaths))
 	for _, p := range localPaths {
 		fi, err := os.Lstat(p)
 		if err != nil {
-			return n, classify(op, err)
+			return "", classify(op, err)
 		}
-		if !fi.Mode().IsRegular() {
-			continue
+		if fi.Mode().IsRegular() {
+			files = append(files, p)
 		}
-		if err := c.Upload(ctx, daemonID, uuid, remoteDir, p, false); err != nil {
-			return n, mapMCS(op, err)
-		}
-		n++
 	}
-	if n == 0 {
-		return 0, invalid(op, "no regular files were selected")
+	if len(files) == 0 {
+		return "", invalid(op, "no regular files were selected")
 	}
-	return n, nil
+	group := s.newGroupID()
+	for _, p := range files {
+		s.submit(s.mcsUploadSpec(group, c, daemonID, uuid, remoteDir, p))
+	}
+	return group, nil
+}
+
+// mcsUploadSpec is the task that uploads one file to the panel.
+func (s *Service) mcsUploadSpec(group string, c *mcsmanager.Client, daemonID, uuid, remoteDir, localPath string) taskSpec {
+	name := filepath.Base(localPath)
+	remotePath := joinMCS(remoteDir, name)
+	spec := taskSpec{
+		Kind: KindUpload, Group: group,
+		Title:  "Upload " + name,
+		Detail: "→ " + remotePath,
+		Work: func(ctx context.Context, r *run) error {
+			return s.runMCSUpload(ctx, r, c, daemonID, uuid, remoteDir, localPath, remotePath)
+		},
+	}
+	spec.Retry = func([]ItemResult) (taskSpec, bool) { return spec, true }
+	return spec
+}
+
+// runMCSUpload uploads one file and reports its progress and result.
+func (s *Service) runMCSUpload(ctx context.Context, r *run, c *mcsmanager.Client, daemonID, uuid, remoteDir, localPath, remotePath string) error {
+	const op = "MCSUpload"
+	fi, err := os.Stat(localPath)
+	if err != nil {
+		return classify(op, err)
+	}
+	if !fi.Mode().IsRegular() {
+		return invalid(op, "%s is not a regular file", localPath)
+	}
+	r.SetTotal(fi.Size(), 1)
+	if err := c.Upload(ctx, daemonID, uuid, remoteDir, localPath, false, r.SetBytes); err != nil {
+		r.Item(ItemResult{Key: remotePath, Status: ItemFailed, Err: err.Error()})
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return mapMCS(op, err)
+	}
+	r.SetBytes(fi.Size())
+	r.Item(ItemResult{Key: remotePath, Status: ItemSucceeded})
+	return nil
 }
