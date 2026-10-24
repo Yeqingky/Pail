@@ -350,11 +350,14 @@ func (f File) Folder() bool { return f.Type == 0 }
 
 // FilePage is one page of a directory listing.
 type FilePage struct {
-	Items        []File `json:"items"`
-	Page         int    `json:"page"`
-	PageSize     int    `json:"pageSize"`
-	Total        int    `json:"total"`
-	AbsolutePath string `json:"absolutePath"`
+	Items    []File `json:"items"`
+	Page     int    `json:"page"`
+	PageSize int    `json:"pageSize"`
+	Total    int    `json:"total"`
+	// Target is the instance-relative directory that was requested. The
+	// panel's absolutePath is a path on the daemon host and must never be
+	// sent back as a target: the daemon would join it below the instance root.
+	Target string `json:"-"`
 }
 
 // DownloadTask is one URL download task of the instance.
@@ -392,7 +395,8 @@ func (c *Client) ListFiles(ctx context.Context, daemonID, uuid, dir string, page
 	q := url.Values{}
 	q.Set("daemonId", daemonID)
 	q.Set("uuid", uuid)
-	q.Set("target", cleanTarget(dir))
+	target := cleanTarget(dir)
+	q.Set("target", target)
 	q.Set("page", strconv.Itoa(max(page, 0)))
 	q.Set("page_size", strconv.Itoa(clampFilePageSize(pageSize)))
 	if fileName != "" {
@@ -400,6 +404,7 @@ func (c *Client) ListFiles(ctx context.Context, daemonID, uuid, dir string, page
 	}
 	var out FilePage
 	err := c.do(ctx, http.MethodGet, "/api/files/list", q, nil, &out)
+	out.Target = target
 	return out, err
 }
 

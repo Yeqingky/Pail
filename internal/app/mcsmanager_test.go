@@ -37,7 +37,7 @@ func TestMCSMDaemonsAndFiles(t *testing.T) {
 			io.WriteString(w, `{"status":200,"data":{"items":[
 				{"name":"world","size":0,"time":"Fri Jun 07 2024 08:53:34 GMT+0800","mode":755,"type":0},
 				{"name":"server.jar","size":42,"time":"Thu Jun 06 2024 18:25:14 GMT+0800","mode":644,"type":1}],
-				"page":0,"pageSize":10,"total":2,"absolutePath":"/srv"}}`)
+				"page":0,"pageSize":10,"total":2,"absolutePath":"/opt/mcsmanager/daemon/data/InstanceData/i1/srv"}}`)
 		default:
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
@@ -281,5 +281,43 @@ func TestMCSAccessDeniedKeepsThePanelReason(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "API Key is not enabled") {
 		t.Fatalf("err = %v, want the panel's reason", err)
+	}
+}
+
+func TestMCSFilesKeepInstanceRelativePaths(t *testing.T) {
+	var targets []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		target := r.URL.Query().Get("target")
+		targets = append(targets, target)
+		hostPath := "/opt/mcsmanager/daemon/data/InstanceData/i1"
+		if target != "/" {
+			hostPath += target
+		}
+		json.NewEncoder(w).Encode(map[string]any{"status": 200, "data": map[string]any{
+			"items":        []map[string]any{{"name": "yeqing.jpeg", "size": 226, "time": "now", "mode": 644, "type": 1}},
+			"page":         0,
+			"pageSize":     50,
+			"total":        1,
+			"absolutePath": hostPath + "/",
+		}})
+	}))
+	t.Cleanup(srv.Close)
+
+	s := newTestService(t, nil)
+	a := newMCSAccount(t, s, srv.URL)
+	ctx := context.Background()
+
+	page, err := s.MCSFiles(ctx, a.ID, "d1", "i1", "/", 0, 50, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Path != "/" || len(page.Entries) != 1 || page.Entries[0].Path != "/yeqing.jpeg" {
+		t.Fatalf("page = %+v", page)
+	}
+	if _, err := s.MCSFiles(ctx, a.ID, "d1", "i1", page.Path, 0, 50, ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 2 || targets[0] != "/" || targets[1] != "/" {
+		t.Fatalf("targets = %v, want the relative root twice", targets)
 	}
 }

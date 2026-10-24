@@ -234,7 +234,7 @@ func (s *Service) MCSFiles(ctx context.Context, accountID, daemonID, uuid, dir s
 	if err != nil {
 		return MCSFilePage{}, mapMCS(op, err)
 	}
-	base := p.AbsolutePath
+	base := p.Target
 	if base == "" {
 		base = dir
 	}

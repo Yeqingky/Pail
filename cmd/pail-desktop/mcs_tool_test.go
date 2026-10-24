@@ -45,7 +45,7 @@ func TestMCSMToolListsInstancesAndFiles(t *testing.T) {
 			io.WriteString(w, `{"status":200,"data":{"items":[
 				{"name":"world","size":0,"time":"Fri Jun 07 2024 08:53:34 GMT+0800","mode":755,"type":0},
 				{"name":"server.jar","size":42,"time":"Thu Jun 06 2024 18:25:14 GMT+0800","mode":644,"type":1}],
-				"page":0,"pageSize":50,"total":2,"absolutePath":"/srv"}}`)
+				"page":0,"pageSize":50,"total":2,"absolutePath":"/opt/mcsmanager/daemon/data/InstanceData/i1/"}}`)
 		default:
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
@@ -66,10 +66,13 @@ func TestMCSMToolListsInstancesAndFiles(t *testing.T) {
 	})
 	h.settle()
 
+	if h.a.tl.mcs.path != "/" || len(h.a.tl.mcs.files) != 2 || h.a.tl.mcs.files[0].Path != "/world" {
+		t.Fatalf("path = %q, files = %+v", h.a.tl.mcs.path, h.a.tl.mcs.files)
+	}
 	if h.a.tool != "mcs" {
 		t.Fatalf("tool = %q, want mcs", h.a.tool)
 	}
-	h.mustHave("Node One", "Survival", "/srv", "world", "server.jar")
+	h.mustHave("Node One", "Survival", "world", "server.jar")
 	if h.a.visible(h.a.cmd("tool.cloudfront")) {
 		t.Fatal("CloudFront is visible for an MCSManager account")
 	}
@@ -99,7 +102,7 @@ func TestMCSMToolFallsBackForNonAdminKeys(t *testing.T) {
 		case "/api/files/list":
 			io.WriteString(w, `{"status":200,"data":{"items":[
 				{"name":"world","size":0,"time":"Fri Jun 07 2024 08:53:34 GMT+0800","mode":755,"type":0}],
-				"page":0,"pageSize":50,"total":1,"absolutePath":"/srv"}}`)
+				"page":0,"pageSize":50,"total":1,"absolutePath":"/opt/mcsmanager/daemon/data/InstanceData/i1/"}}`)
 		default:
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
@@ -120,10 +123,13 @@ func TestMCSMToolFallsBackForNonAdminKeys(t *testing.T) {
 	})
 	h.settle()
 
+	if h.a.tl.mcs.path != "/" || len(h.a.tl.mcs.files) != 1 || h.a.tl.mcs.files[0].Path != "/world" {
+		t.Fatalf("path = %q, files = %+v", h.a.tl.mcs.path, h.a.tl.mcs.files)
+	}
 	if h.a.tl.mcs.daemons[0].Name != "Node One" || h.a.tl.mcs.instances[0].Name != "Survival" {
 		t.Fatalf("daemons = %+v, instances = %+v", h.a.tl.mcs.daemons, h.a.tl.mcs.instances)
 	}
-	h.mustHave("Node One", "Survival", "/srv", "world")
+	h.mustHave("Node One", "Survival", "world")
 }
 
 func TestMCSAccessDeniedTextExplainsPanelAPI(t *testing.T) {

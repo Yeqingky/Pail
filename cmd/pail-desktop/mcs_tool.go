@@ -379,7 +379,7 @@ func (a *app) mcsView(c *ui.Context) {
 	a.mcsFolderDialog(c)
 }
 
-// mcsDisplayPath shows the panel's absolute path, with "/" for the root.
+// mcsDisplayPath shows the instance-relative path, with "/" for the root.
 func mcsDisplayPath(p string) string {
 	if p == "" {
 		return "/"

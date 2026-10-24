@@ -30,7 +30,7 @@ func TestListFilesSendsAuthAndParsesPage(t *testing.T) {
 		io.WriteString(w, `{"status":200,"data":{
 			"items":[{"name":"world","size":0,"time":"Fri Jun 07 2024 08:53:34 GMT+0800","mode":755,"type":0},
 			         {"name":"server.jar","size":42,"time":"Thu Jun 06 2024 18:25:14 GMT+0800","mode":644,"type":1}],
-			"page":0,"pageSize":10,"total":2,"absolutePath":"/srv"},"time":1}`)
+			"page":0,"pageSize":10,"total":2,"absolutePath":"/opt/mcsmanager/daemon/data/InstanceData/i1/srv"},"time":1}`)
 	})
 	page, err := c.ListFiles(context.Background(), "d1", "i1", "/srv", 0, 10, "world")
 	if err != nil {
@@ -51,7 +51,7 @@ func TestListFilesSendsAuthAndParsesPage(t *testing.T) {
 	if len(page.Items) != 2 || page.Items[0].Name != "world" || !page.Items[0].Folder() || page.Items[1].Folder() {
 		t.Fatalf("page = %+v", page)
 	}
-	if page.AbsolutePath != "/srv" || page.Total != 2 {
+	if page.Target != "/srv" || page.Total != 2 {
 		t.Fatalf("page metadata = %+v", page)
 	}
 }
