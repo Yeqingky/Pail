@@ -141,6 +141,10 @@ func (a *app) mainArea(c *ui.Context) {
 			a.toolView(c)
 			return
 		}
+		if a.mcsMode() {
+			a.mcsView(c)
+			return
+		}
 		a.pathBar(c)
 		a.objects(c)
 	})

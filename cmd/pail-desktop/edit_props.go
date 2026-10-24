@@ -562,6 +562,9 @@ func (a *app) reloadSame(loc Scope) {
 // inspectorFooter is the slim bar with Revert and Save that appears while the
 // open tab has unsaved edits.
 func (a *app) inspectorFooter(c *ui.Context) {
+	if a.mcsBrowser() {
+		return
+	}
 	k := tk(c)
 	var dirty bool
 	var saving bool

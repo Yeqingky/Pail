@@ -15,6 +15,7 @@ func (a *app) dialogs(c *ui.Context) {
 	a.accountDialog(c)
 	a.bucketDialogs(c) // under the confirmation, which a bucket dialog can open
 	a.objOpsDialogs(c)
+	a.mcsCodeDialog(c)
 	a.confirmDialog(c)
 	a.syncDiscardDialog(c)
 	a.vaultDialogs(c) // so the unlock dialog is above whatever asked for it

@@ -311,7 +311,14 @@ func commandTable() []command {
 		{ID: "transfers", Label: locales.Messages.CmdTransfers, Icon: "panel-bottom", Chords: []chord{{ui.Cmd, ui.KeyJ, "Ctrl+J"}}, Accel: "CmdOrCtrl+J",
 			Run: func(a *app) { a.transfersOpen = !a.transfersOpen }},
 		{ID: "search", Label: locales.Messages.CmdSearch, Icon: "search", Chords: []chord{{ui.Cmd, ui.KeyF, "Ctrl+F"}}, Accel: "CmdOrCtrl+F",
-			Enabled: (*app).browsing, Run: func(a *app) { a.searchH.Focus() }},
+			Enabled: func(a *app) bool { return a.browsing() || a.mcsBrowser() },
+			Run: func(a *app) {
+				if a.mcsBrowser() {
+					a.mcsFilterH.Focus()
+				} else {
+					a.searchH.Focus()
+				}
+			}},
 		{ID: "newbucket", Label: locales.Messages.CmdNewBucket, Icon: "plus", Cap: core.CapBucketCreate, Enabled: (*app).hasAccount, Run: func(a *app) { a.openNewBucket() }},
 		{ID: "bucketsettings", Label: locales.Messages.CmdBucketSettings, Icon: "sliders-horizontal", Cap: core.CapBucketConfig, Enabled: (*app).browsing,
 			Run: func(a *app) { a.openBucketSettings(a.scope.Bucket) }},
@@ -435,6 +442,12 @@ func (a *app) selectAll() {
 
 func (a *app) openTool(id string) {
 	if !a.visible(a.cmd("tool." + id)) {
+		return
+	}
+	if id == "mcs" && a.mcsMode() {
+		a.tool = ""
+		a.navSel = ""
+		a.mcsEnsure()
 		return
 	}
 	a.tool = id

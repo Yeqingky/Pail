@@ -27,6 +27,9 @@ func (a *app) inspectorTabAllowed(i int) bool {
 	if i < 0 || i >= len(inspectorTabs) {
 		return false
 	}
+	if a.mcsBrowser() {
+		return i == 0 || i == 1 // Overview and Headers
+	}
 	c := inspectorTabs[i].cap
 	return c == "" || a.hasCap(c)
 }
@@ -91,6 +94,10 @@ func (a *app) inspector(c *ui.Context) {
 }
 
 func (a *app) inspectorBody(c *ui.Context) {
+	if a.mcsBrowser() {
+		a.mcsInspectorBody(c)
+		return
+	}
 	keys := a.selectedKeys()
 	switch {
 	case a.mg.del.on && len(keys) > 0:

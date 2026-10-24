@@ -16,7 +16,11 @@ func (a *app) sidebar(c *ui.Context) {
 	k := tk(c)
 	ui.Column(c).Fill().MinWidth(0).MinHeight(0).Background(k.Sidebar).Children(func() {
 		a.accountSwitcher(c)
-		a.bucketList(c)
+		if a.mcsMode() {
+			a.mcsNav(c)
+		} else {
+			a.bucketList(c)
+		}
 		a.toolList(c)
 	})
 }
@@ -272,6 +276,9 @@ func (a *app) toolList(c *ui.Context) {
 	ui.Column(c).Padding(0, 0, 8, 0).Children(func() {
 		sidebarLabel(c, locales.SidebarTools(), 0, nil)
 		for _, id := range toolIDs {
+			if id == "mcs" && a.mcsMode() {
+				continue // the browser is the account's main view
+			}
 			cmd := a.cmd("tool." + id)
 			if !a.visible(cmd) {
 				continue
@@ -298,4 +305,115 @@ func (a *app) bucketsErrText() string {
 		return locales.StateBucketsSecretMissing()
 	}
 	return a.bucketsErr
+}
+
+// mcsMode reports whether the account browses an MCSManager panel instead of
+// S3 buckets. Its node and instance tree takes the bucket list's place.
+func (a *app) mcsMode() bool {
+	return core.ProviderHasCapability(a.account().Provider, core.CapMCSInstanceList)
+}
+
+// mcsNav is the panel node and instance list, with the same filter box as the
+// bucket list.
+func (a *app) mcsNav(c *ui.Context) {
+	a.mcsEnsure()
+	m := &a.tl.mcs
+	k := tk(c)
+	total := 0
+	for _, n := range m.tree {
+		total += len(n.Instances)
+	}
+	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
+		sidebarLabel(c, locales.SidebarInstances(), total, func() {
+			if m.loading {
+				ui.Spinner(c).Size(12, 12)
+			}
+			if iconButton(c, icons.Get("refresh-cw"), locales.CommonRefresh()).Clicked() {
+				a.mcsLoadDaemons()
+			}
+		})
+		ui.Box(c).Margin(0, 12, 8, 12).Children(func() {
+			searchBox(c, &a.mcsFilter, &a.mcsFilterH, locales.SidebarFilterInstances(), locales.SidebarFilterInstances(), 0, icons.Get("search"), icons.Get("x"))
+		})
+		if m.navErr != "" {
+			ui.Column(c).Margin(0, 12, 8, 12).Padding(8, 10).Gap(6).Radius(6).
+				Background(k.Danger.Alpha(0.10)).Border(1, k.Danger.Alpha(0.35)).Children(func() {
+				ui.Row(c).Gap(6).AlignItems(ui.Start).Children(func() {
+					ui.Icon(c, icons.Get("circle-alert")).FontSize(14).TextColor(k.Danger).Shrink(0).MarginY(1)
+					ui.Text(c, m.navErr).FontSize(sizeSecondary).TextColor(k.Text).Grow(1).MinWidth(0)
+				})
+				ui.Row(c).Justify(ui.End).Children(func() {
+					secondaryButton(c, locales.CommonRetry(), m.loading).OnClick(a.mcsLoadDaemons)
+				})
+			})
+		}
+		ui.Scroll(c).Grow(1).MinHeight(0).ScrollbarInsets(0, 2, 0, 0).Children(func() {
+			ui.Column(c).Gap(0).Children(func() {
+				filter := strings.ToLower(strings.TrimSpace(a.mcsFilter))
+				shown := 0
+				for _, n := range m.tree {
+					nodeMatch := filter == "" || strings.Contains(strings.ToLower(n.Daemon.Name), filter)
+					var instances []core.MCSInstance
+					for _, in := range n.Instances {
+						if filter == "" || nodeMatch || strings.Contains(strings.ToLower(in.Name), filter) {
+							instances = append(instances, in)
+						}
+					}
+					if !nodeMatch && len(instances) == 0 {
+						continue
+					}
+					shown++
+					ui.Row(c).Padding(16, 10, 2, 16).Gap(6).AlignItems(ui.Center).Children(func() {
+						ui.Icon(c, icons.Get("server")).FontSize(12).TextColor(k.TextMuted)
+						ui.Text(c, n.Daemon.Name).FontSize(sizeLabel).FontWeight(500).TextColor(k.TextMuted).SingleLine().Grow(1).MinWidth(0)
+					})
+					if n.Err != "" {
+						ui.Text(c, n.Err).FontSize(sizeLabel).TextColor(k.Danger).Padding(8, 16).SingleLine()
+					}
+					for _, in := range instances {
+						a.mcsSidebarItem(c, n.Daemon, in)
+					}
+				}
+				if shown == 0 && len(m.tree) > 0 {
+					ui.Text(c, locales.SidebarNoMatchingInstances()).FontSize(sizeSecondary).TextColor(k.TextMuted).Padding(8, 16)
+				}
+				if len(m.tree) == 0 && !m.loading && m.navErr == "" {
+					ui.Text(c, locales.SidebarNoInstances()).FontSize(sizeSecondary).TextColor(k.TextMuted).Padding(8, 16)
+				}
+			})
+		})
+	})
+}
+
+// mcsSidebarItem is one 28px instance row under its node heading.
+func (a *app) mcsSidebarItem(c *ui.Context, d core.MCSDaemon, in core.MCSInstance) {
+	k := tk(c)
+	m := &a.tl.mcs
+	on := m.daemonID == d.ID && m.instanceID == in.UUID
+	row := ui.ButtonBase(c.Key("mcs:"+d.ID+"/"+in.UUID)).Label(in.Name).Height(28).Margin(0, 8).Padding(0, 8).Gap(8).Radius(6).AlignItems(ui.Center).Transition(hoverFade())
+	switch {
+	case on:
+		row.Background(k.ActiveFill)
+	case row.Hovered():
+		row.Background(k.SurfaceHover)
+	}
+	row.Children(func() {
+		ic := k.TextMuted
+		w := 400
+		if on {
+			ic, w = k.Accent, 600
+			selectionBar(c, 6, "sidebar")
+		}
+		ui.Icon(c, icons.Get("server")).FontSize(14).TextColor(ic)
+		ui.Text(c, in.Name).FontSize(sizeBody).FontWeight(w).TextColor(k.Text).SingleLine().Grow(1).MinWidth(0)
+	})
+	row.Tooltip(d.Name + " · " + in.Name)
+	if row.Clicked() {
+		a.mcsSelectInstance(d.ID, in.UUID)
+	}
+}
+
+// mcsBrowser reports whether the main area and inspector show panel files.
+func (a *app) mcsBrowser() bool {
+	return a.mcsMode() && a.tool == ""
 }

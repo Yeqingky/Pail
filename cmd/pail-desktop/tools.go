@@ -52,8 +52,6 @@ func (a *app) toolSync() {
 	switch prev {
 	case "cloudfront":
 		a.cfLeave()
-	case "mcs":
-		a.mcsLeave()
 	}
 	switch a.tool {
 	case "rules":
@@ -64,8 +62,6 @@ func (a *app) toolSync() {
 		a.mpEnter()
 	case "cloudfront":
 		a.cfEnter()
-	case "mcs":
-		a.mcsEnter()
 	case "sync":
 		a.syncEnter()
 	}
@@ -110,8 +106,6 @@ func (a *app) toolView(c *ui.Context) {
 		a.mpView(c)
 	case "cloudfront":
 		a.cfView(c)
-	case "mcs":
-		a.mcsView(c)
 	case "sync":
 		a.syncView(c)
 	default:

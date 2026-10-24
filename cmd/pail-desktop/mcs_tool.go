@@ -24,6 +24,9 @@ type mcsState struct {
 	daemonID   string
 	instances  []core.MCSInstance
 	instanceID string
+	tree       []mcsNavNode
+	loadedFor  string
+	navErr     string
 
 	path                string
 	files               []core.MCSFile
@@ -59,6 +62,13 @@ type mcsState struct {
 	codeErr   string
 	codeBusy  bool
 	codeRetry func()
+}
+
+// mcsNavNode is one panel node and the instances the sidebar lists under it.
+type mcsNavNode struct {
+	Daemon    core.MCSDaemon
+	Instances []core.MCSInstance
+	Err       string
 }
 
 // mcsMarquee is a Windows-style selection rectangle started on blank table
@@ -105,86 +115,162 @@ func mcsErrorText(err error) string {
 	return text
 }
 
-func mcsColumns() []ui.TableColumn {
-	return []ui.TableColumn{
+// mcsColumns drops the less important columns when the table is narrow; the
+// inspector leaves less room in the center at 960px.
+func mcsColumns(tier int) []ui.TableColumn {
+	all := []ui.TableColumn{
 		{Title: locales.CommonName(), ID: "name", MinWidth: 200},
 		{Title: locales.CommonSize(), ID: "size", Width: 100, MinWidth: 70, Align: ui.End},
 		{Title: locales.InspectorModified(), ID: "modified", Width: 190, MinWidth: 110},
 		{Title: locales.McsMode(), ID: "mode", Width: 74, MinWidth: 50, Align: ui.End},
 	}
+	switch {
+	case tier <= 0:
+		return all
+	case tier == 1:
+		return all[:3]
+	default:
+		return all[:2]
+	}
 }
 
-func (a *app) mcsEnter() {
+// mcsEnsure loads the node and instance tree once per account.
+func (a *app) mcsEnsure() {
 	m := &a.tl.mcs
+	if m.loadedFor == a.accountID {
+		return
+	}
 	gen := m.gen + 1
-	*m = mcsState{gen: gen, path: "/", cursor: -1}
+	*m = mcsState{gen: gen, path: "/", cursor: -1, loadedFor: a.accountID}
 	a.mcsLoadDaemons()
 }
-
-func (a *app) mcsLeave() { a.tl.mcs.gen++ }
 
 func (a *app) mcsLoadDaemons() {
 	m := &a.tl.mcs
 	gen := m.gen + 1
-	m.gen, m.loading, m.err = gen, true, ""
+	m.gen, m.loading, m.err, m.navErr = gen, true, "", ""
+	m.loadedFor = a.accountID
 	acct := a.accountID
 	a.bg(func() func() {
-		ctx, cancel := a.timeout(30 * time.Second)
+		ctx, cancel := a.timeout(60 * time.Second)
 		defer cancel()
 		ds, err := a.svc.MCSDaemons(ctx, acct)
-		return func() {
-			if gen != m.gen {
-				return
-			}
-			m.loading = false
-			if err != nil {
+		if err != nil {
+			return func() {
+				if gen != m.gen || a.accountID != acct {
+					return
+				}
+				m.loading = false
 				if errors.Is(err, core.ErrMCSNeed2FA) {
 					a.mcsAskCode(a.mcsLoadDaemons)
 					return
 				}
-				m.err = mcsErrorText(err)
+				m.navErr = mcsErrorText(err)
+			}
+		}
+		tree := make([]mcsNavNode, len(ds))
+		need2FA := false
+		for i, d := range ds {
+			tree[i].Daemon = d
+			ins, err := a.svc.MCSInstances(ctx, acct, d.ID, 1, 50)
+			if err != nil {
+				if errors.Is(err, core.ErrMCSNeed2FA) {
+					need2FA = true
+					break
+				}
+				tree[i].Err = mcsErrorText(err)
+				continue
+			}
+			tree[i].Instances = ins
+		}
+		return func() {
+			if gen != m.gen || a.accountID != acct {
 				return
 			}
-			m.daemons, m.daemonID = ds, ""
-			m.instances, m.instanceID = nil, ""
-			if len(ds) > 0 {
-				m.daemonID = ds[0].ID
-				a.mcsLoadInstances()
+			m.loading = false
+			if need2FA {
+				a.mcsAskCode(a.mcsLoadDaemons)
+				return
 			}
+			m.daemons, m.tree = ds, tree
+			daemon, instance := m.daemonID, m.instanceID
+			if !m.hasInstance(daemon, instance) {
+				daemon, instance = "", ""
+				for _, n := range tree {
+					if len(n.Instances) > 0 {
+						daemon, instance = n.Daemon.ID, n.Instances[0].UUID
+						break
+					}
+				}
+			}
+			changed := daemon != m.daemonID || instance != m.instanceID
+			m.daemonID, m.instanceID = daemon, instance
+			m.syncInstances()
+			if instance == "" {
+				m.files, m.sel, m.cursor = nil, ui.Selection[string]{}, -1
+				m.marquee = mcsMarquee{}
+				return
+			}
+			if changed {
+				m.path, m.files = "/", nil
+				m.sel.Clear()
+				m.cursor = -1
+				m.marquee = mcsMarquee{}
+			}
+			a.mcsLoadFiles()
 		}
 	})
 }
 
-func (a *app) mcsLoadInstances() {
+// mcsSelectInstance shows one instance's files and opens the MCS browser.
+func (a *app) mcsSelectInstance(daemonID, instanceID string) {
 	m := &a.tl.mcs
-	gen := m.gen + 1
-	m.gen, m.loading, m.err = gen, true, ""
-	acct, daemon := a.accountID, m.daemonID
-	a.bg(func() func() {
-		ctx, cancel := a.timeout(30 * time.Second)
-		defer cancel()
-		ins, err := a.svc.MCSInstances(ctx, acct, daemon, 1, 50)
-		return func() {
-			if gen != m.gen {
-				return
-			}
-			m.loading = false
-			if err != nil {
-				if errors.Is(err, core.ErrMCSNeed2FA) {
-					a.mcsAskCode(a.mcsLoadInstances)
-					return
-				}
-				m.err = mcsErrorText(err)
-				return
-			}
-			m.instances, m.instanceID = ins, ""
-			if len(ins) > 0 {
-				m.instanceID = ins[0].UUID
-				m.path = "/"
-				a.mcsLoadFiles()
+	same := m.daemonID == daemonID && m.instanceID == instanceID
+	if a.tool != "" {
+		a.openTool("mcs")
+	}
+	if same {
+		if len(m.files) == 0 && !m.loading {
+			a.mcsLoadFiles()
+		}
+		return
+	}
+	m.daemonID, m.instanceID = daemonID, instanceID
+	m.syncInstances()
+	m.path, m.files = "/", nil
+	m.sel.Clear()
+	m.cursor = -1
+	m.marquee = mcsMarquee{}
+	a.mcsLoadFiles()
+}
+
+// hasInstance reports whether the tree still contains the pair.
+func (m *mcsState) hasInstance(daemonID, instanceID string) bool {
+	if daemonID == "" || instanceID == "" {
+		return false
+	}
+	for _, n := range m.tree {
+		if n.Daemon.ID != daemonID {
+			continue
+		}
+		for _, in := range n.Instances {
+			if in.UUID == instanceID {
+				return true
 			}
 		}
-	})
+	}
+	return false
+}
+
+// syncInstances keeps the selected node's list for menus and the inspector.
+func (m *mcsState) syncInstances() {
+	m.instances = nil
+	for _, n := range m.tree {
+		if n.Daemon.ID == m.daemonID {
+			m.instances = n.Instances
+			return
+		}
+	}
 }
 
 func (a *app) mcsLoadFiles() {
@@ -212,7 +298,7 @@ func (a *app) mcsFetchFiles(page int, appendRows bool) {
 		defer cancel()
 		p, err := a.svc.MCSFiles(ctx, acct, daemon, instance, dir, page, 100, "")
 		return func() {
-			if gen != m.gen {
+			if gen != m.gen || a.accountID != acct {
 				return
 			}
 			m.loading = false
@@ -281,49 +367,10 @@ func mcsAtRoot(p string) bool {
 }
 
 func (a *app) mcsView(c *ui.Context) {
+	a.mcsEnsure()
 	k := tk(c)
 	m := &a.tl.mcs
 	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
-		ui.Row(c).Height(48).Padding(0, 16).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
-			if len(m.daemons) > 0 {
-				opts := make([]choice, 0, len(m.daemons))
-				for _, d := range m.daemons {
-					opts = append(opts, choice{d.ID, d.Name})
-				}
-				if selectBox(c, locales.McsNode(), &m.daemonID, opts, 200) {
-					m.instances, m.instanceID, m.files = nil, "", nil
-					m.sel.Clear()
-					m.cursor = -1
-					a.mcsLoadInstances()
-				}
-			}
-			if len(m.instances) > 0 {
-				opts := make([]choice, 0, len(m.instances))
-				for _, in := range m.instances {
-					opts = append(opts, choice{in.UUID, in.Name})
-				}
-				if selectBox(c, locales.McsInstance(), &m.instanceID, opts, 220) {
-					m.path, m.files = "/", nil
-					m.sel.Clear()
-					m.cursor = -1
-					a.mcsLoadFiles()
-				}
-			}
-			if ghostButton(c, icons.Get("refresh-cw"), locales.CommonRefresh(), locales.CommonRefresh(), m.instanceID == "" || m.loading).Clicked() {
-				if m.daemonID == "" {
-					a.mcsLoadDaemons()
-				} else if m.instanceID == "" {
-					a.mcsLoadInstances()
-				} else {
-					a.mcsLoadFiles()
-				}
-			}
-			if m.loading {
-				ui.Spinner(c).Size(14, 14)
-			}
-			ui.Spacer(c)
-			helpIcon(c, locales.McsHelp())
-		})
 		paneBar(c, "mcs-path", func() {
 			up := ghostButton(c, icons.Get("arrow-up"), "", locales.McsUp(), m.instanceID == "" || mcsAtRoot(m.path))
 			if up.Clicked() {
@@ -350,31 +397,47 @@ func (a *app) mcsView(c *ui.Context) {
 					a.mcsAskDelete()
 				}
 			}
+			if ghostButton(c, icons.Get("refresh-cw"), locales.CommonRefresh(), locales.CommonRefresh(), m.loading).Clicked() {
+				if m.instanceID == "" {
+					a.mcsLoadDaemons()
+				} else {
+					a.mcsLoadFiles()
+				}
+			}
+			helpIcon(c, locales.McsHelp())
 		})
 		hairline(c)
 		switch {
+		case m.navErr != "" && len(m.files) == 0:
+			ui.Row(c).Margin(12).Padding(8, 12).Gap(10).AlignItems(ui.Center).Radius(6).Shrink(0).
+				Background(k.Danger.Alpha(0.10)).Border(1, k.Danger.Alpha(0.35)).Children(func() {
+				ui.Icon(c, icons.Get("circle-alert")).TextColor(k.Danger)
+				ui.Text(c, m.navErr).Grow(1).MinWidth(0).TextColor(k.Text)
+				secondaryButton(c, locales.CommonRetry(), false).OnClick(a.mcsLoadDaemons)
+			})
 		case m.err != "":
 			ui.Row(c).Margin(12).Padding(8, 12).Gap(10).AlignItems(ui.Center).Radius(6).Shrink(0).
 				Background(k.Danger.Alpha(0.10)).Border(1, k.Danger.Alpha(0.35)).Children(func() {
 				ui.Icon(c, icons.Get("circle-alert")).TextColor(k.Danger)
 				ui.Text(c, m.err).Grow(1).MinWidth(0).TextColor(k.Text)
-				retry := a.mcsLoadFiles
-				if m.daemonID == "" {
-					retry = a.mcsLoadDaemons
-				} else if m.instanceID == "" {
-					retry = a.mcsLoadInstances
+				retry := a.mcsLoadDaemons
+				if m.instanceID != "" {
+					retry = a.mcsLoadFiles
 				}
 				secondaryButton(c, locales.CommonRetry(), false).OnClick(retry)
 			})
+		case m.instanceID == "" && m.loading:
+			ui.Column(c).Grow(1).Center().Gap(10).Children(func() {
+				ui.Spinner(c).Size(22, 22)
+				mutedText(c, locales.CommonLoading())
+			})
+		case m.instanceID == "":
+			emptyBlock(c, "server", locales.McsSelectInstance(), "", 0)
 		case m.loading && len(m.files) == 0:
 			ui.Column(c).Grow(1).Center().Gap(10).Children(func() {
 				ui.Spinner(c).Size(22, 22)
 				mutedText(c, locales.CommonLoading())
 			})
-		case len(m.daemons) == 0:
-			emptyBlock(c, "server", locales.McsNoNodes(), "", 0)
-		case len(m.instances) == 0:
-			emptyBlock(c, "server", locales.McsNoInstances(), "", 0)
 		case len(m.files) == 0:
 			empty := emptyBlock(c, "folder", locales.McsNoFiles(), "", 0)
 			a.contextMenu(empty, menuSpec{name: locales.McsMenuActions()}, func(mb *menuBuilder) {
@@ -390,10 +453,11 @@ func (a *app) mcsView(c *ui.Context) {
 			m.list.Selected = &m.cursor
 			m.list.DragSelect = true
 			m.rowRects = make(map[string]ui.Rect, len(files))
-			tbl := toolTable(c, &m.list, mcsColumns(), len(files), func(row, col int) {
+			cols := mcsColumns(a.lay.colTier)
+			tbl := toolTable(c, &m.list, cols, len(files), func(row, col int) {
 				f := &files[row]
-				switch col {
-				case 0:
+				switch cols[col].ID {
+				case "name":
 					cell := ui.Row(c).Gap(6).AlignItems(ui.Center)
 					cell.Children(func() {
 						ic := "file"
@@ -404,13 +468,13 @@ func (a *app) mcsView(c *ui.Context) {
 						ui.Text(c, f.Name).FontSize(sizeSecondary).TextColor(k.Text).SingleLine().Grow(1).MinWidth(0)
 					})
 					m.rowRects[f.Path] = cell.Bounds()
-				case 1:
+				case "size":
 					if !f.Folder {
 						secondaryCell(c, humanBytes(f.Size), true, ui.End)
 					}
-				case 2:
+				case "modified":
 					secondaryCell(c, f.Modified, f.Modified != "", ui.Start)
-				case 3:
+				case "mode":
 					secondaryCell(c, strconv.Itoa(f.Mode), f.Mode != 0, ui.End)
 				}
 			})
@@ -499,7 +563,6 @@ func (a *app) mcsView(c *ui.Context) {
 	})
 	a.mcsFolderDialog(c)
 	a.mcsRenameDialog(c)
-	a.mcsCodeDialog(c)
 }
 
 // mcsDisplayPath shows the instance-relative path, with "/" for the root.
@@ -992,4 +1055,103 @@ func (a *app) mcsRename() {
 			a.mcsLoadFiles()
 		}
 	})
+}
+
+// selectedFiles returns the listed files in the selection, in table order.
+func (m *mcsState) selectedFiles() []*core.MCSFile {
+	if m.sel.Len() == 0 {
+		return nil
+	}
+	out := make([]*core.MCSFile, 0, m.sel.Len())
+	for i := range m.files {
+		if m.sel.Has(m.files[i].Path) {
+			out = append(out, &m.files[i])
+		}
+	}
+	return out
+}
+
+// mcsInspectorBody is the right panel for panel files: Overview and Headers.
+func (a *app) mcsInspectorBody(c *ui.Context) {
+	m := &a.tl.mcs
+	if m.instanceID == "" {
+		a.header(c, "server", locales.McsSelectInstance(), "")
+		return
+	}
+	selected := m.selectedFiles()
+	switch {
+	case len(selected) > 1:
+		folders, files, bytes := 0, 0, int64(0)
+		for _, f := range selected {
+			if f.Folder {
+				folders++
+			} else {
+				files++
+				bytes += f.Size
+			}
+		}
+		a.header(c, "layers", locales.CommonItems(len(selected)), locales.McsInspectorMultiple())
+		kvTable(c, []KV{
+			{locales.InspectorFolders(), groupInt(folders)},
+			{locales.InspectorObjects(), groupInt(files)},
+			{locales.InspectorTotalSize(), humanBytes(bytes)},
+		}, false)
+	case len(selected) == 1:
+		f := selected[0]
+		kind := locales.McsKindFile()
+		size := humanBytes(f.Size)
+		if f.Folder {
+			kind, size = locales.McsKindFolder(), "-"
+		}
+		a.header(c, icons.NameFor(f.Path, f.Folder), f.Name, size)
+		mode := "-"
+		if f.Mode != 0 {
+			mode = strconv.Itoa(f.Mode)
+		}
+		modified := f.Modified
+		if modified == "" {
+			modified = "-"
+		}
+		if a.inspTab == 1 {
+			kvTable(c, []KV{
+				{locales.McsPath(), f.Path},
+				{locales.CommonSize(), size},
+				{locales.InspectorModified(), modified},
+				{locales.McsMode(), mode},
+				{locales.McsKind(), kind},
+				{locales.McsNodeID(), m.daemonID},
+				{locales.McsInstanceID(), m.instanceID},
+			}, true)
+			return
+		}
+		kvTable(c, []KV{
+			{locales.CommonName(), f.Name},
+			{locales.McsPath(), f.Path},
+			{locales.CommonSize(), size},
+			{locales.InspectorModified(), modified},
+			{locales.McsMode(), mode},
+			{locales.McsKind(), kind},
+			{locales.McsNode(), m.daemonName()},
+			{locales.McsInstance(), m.instanceName()},
+		}, false)
+	default:
+		title := mcsDisplayPath(m.path)
+		if title == "/" {
+			title = m.instanceName()
+		}
+		a.header(c, "folder-open", title, locales.InspectorCurrentFolder())
+		rows := []KV{
+			{locales.McsPath(), mcsDisplayPath(m.path)},
+			{locales.InspectorItems(), groupInt(m.fileTotal)},
+		}
+		if len(m.files) != m.fileTotal {
+			rows = append(rows, KV{locales.McsLoaded(), groupInt(len(m.files))})
+		}
+		rows = append(rows,
+			KV{locales.McsNode(), m.daemonName()},
+			KV{locales.McsInstance(), m.instanceName()},
+			KV{locales.CommonAccount(), a.account().Name},
+		)
+		kvTable(c, rows, false)
+	}
 }

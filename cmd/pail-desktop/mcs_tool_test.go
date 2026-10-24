@@ -73,8 +73,8 @@ func TestMCSMToolListsInstancesAndFiles(t *testing.T) {
 	if h.a.tl.mcs.path != "/" || len(h.a.tl.mcs.files) != 2 || h.a.tl.mcs.files[0].Path != "/world" {
 		t.Fatalf("path = %q, files = %+v", h.a.tl.mcs.path, h.a.tl.mcs.files)
 	}
-	if h.a.tool != "mcs" {
-		t.Fatalf("tool = %q, want mcs", h.a.tool)
+	if h.a.tool != "" || !h.a.mcsBrowser() {
+		t.Fatalf("tool = %q, mcsBrowser = %v", h.a.tool, h.a.mcsBrowser())
 	}
 	h.mustHave("Node One", "Survival", "world", "server.jar")
 	if h.a.visible(h.a.cmd("tool.cloudfront")) {
@@ -416,4 +416,92 @@ func TestMCSMToolDragSelectAndContextMenu(t *testing.T) {
 	if len(got) != 1 || got[0] != [2]string{"/server.jar", "/renamed.bin"} {
 		t.Fatalf("move targets = %v", got)
 	}
+}
+
+func TestMCSMSidebarAndInspector(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/service/remote_services_list":
+			io.WriteString(w, `{"status":200,"data":[
+				{"uuid":"d1","ip":"10.0.0.1","port":24444,"available":true,"remarks":"Node One"},
+				{"uuid":"d2","ip":"10.0.0.2","port":24445,"available":true,"remarks":"Node Two"}]}`)
+		case "/api/service/remote_service_instances":
+			switch r.URL.Query().Get("daemonId") {
+			case "d1":
+				io.WriteString(w, `{"status":200,"data":{"page":1,"pageSize":10,"maxPage":1,"data":[
+					{"instanceUuid":"i1","status":3,"config":{"nickname":"Survival"}},
+					{"instanceUuid":"i2","status":1,"config":{"nickname":"Creative"}}]}}`)
+			case "d2":
+				io.WriteString(w, `{"status":200,"data":{"page":1,"pageSize":10,"maxPage":1,"data":[
+					{"instanceUuid":"i3","status":1,"config":{"nickname":"Lobby"}}]}}`)
+			}
+		case "/api/files/list":
+			switch r.URL.Query().Get("uuid") {
+			case "i1":
+				io.WriteString(w, `{"status":200,"data":{"items":[
+					{"name":"world","size":0,"time":"Fri Jun 07 2024","mode":755,"type":0},
+					{"name":"server.jar","size":42,"time":"Thu Jun 06 2024","mode":644,"type":1}],
+					"page":0,"pageSize":100,"total":2,"absolutePath":"/opt/data/i1"}}`)
+			case "i2":
+				io.WriteString(w, `{"status":200,"data":{"items":[
+					{"name":"creative.txt","size":12,"time":"Wed Jun 05 2024","mode":644,"type":1}],
+					"page":0,"pageSize":100,"total":1,"absolutePath":"/opt/data/i2"}}`)
+			case "i3":
+				io.WriteString(w, `{"status":200,"data":{"items":[
+					{"name":"lobby.txt","size":7,"time":"Tue Jun 04 2024","mode":644,"type":1}],
+					"page":0,"pageSize":100,"total":1,"absolutePath":"/opt/data/i3"}}`)
+			}
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	h := newHarness(t, "light")
+	acct, err := h.env.Svc.SaveAccount(core.Account{
+		Name: "Panel", Provider: core.ProviderMCS, Endpoint: srv.URL, Credentials: core.CredAPIKey,
+	}, &core.Secrets{SecretAccessKey: "panel-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.a.refreshAccounts()
+	h.a.selectAccount(acct.ID)
+	h.waitFor("MCSManager tree", func() bool {
+		return len(h.a.tl.mcs.tree) == 2 && len(h.a.tl.mcs.files) == 2 && !h.a.tl.mcs.loading
+	})
+	h.settle()
+
+	if h.a.tool != "" || !h.a.mcsBrowser() || h.a.lay.inspW <= 0 {
+		t.Fatalf("tool = %q, mcsBrowser = %v, inspector width = %v", h.a.tool, h.a.mcsBrowser(), h.a.lay.inspW)
+	}
+	h.mustHave("Instances", "Node One", "Node Two", "Survival", "Creative", "Lobby", "Upload rules", "MIME types", "Settings")
+	h.mustHave("Overview", "Headers")
+	h.mustNotHave("Tags", "Versions", "Permissions")
+
+	h.a.mcsFilter = "Creative"
+	h.settle()
+	if !h.tt.HasText("Creative") || h.tt.HasText("Lobby") {
+		t.Fatalf("filtered sidebar texts = %q", h.tt.Texts())
+	}
+	h.a.mcsFilter = ""
+	h.settle()
+
+	if err := h.tt.Click("Creative"); err != nil {
+		t.Fatal(err)
+	}
+	h.waitFor("Creative files", func() bool {
+		m := &h.a.tl.mcs
+		return m.instanceID == "i2" && len(m.files) == 1 && m.files[0].Name == "creative.txt" && !m.loading
+	})
+	h.settle()
+	if err := h.tt.Click("creative.txt"); err != nil {
+		t.Fatal(err)
+	}
+	h.settle()
+	h.mustHave("creative.txt", "12 B")
+	if err := h.tt.Click("Headers"); err != nil {
+		t.Fatal(err)
+	}
+	h.settle()
+	h.mustHave("Node ID", "Instance ID", "Path")
 }

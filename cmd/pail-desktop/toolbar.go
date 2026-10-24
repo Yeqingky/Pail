@@ -15,6 +15,10 @@ func (a *app) topBar(c *ui.Context) {
 		a.topBarRow(c, locales.ToolbarTool(), func() { a.toolHeader(c) }, func() { a.barRight(c) })
 		return
 	}
+	if a.mcsMode() {
+		a.topBarRow(c, locales.ToolbarCommands(), nil, func() { a.barRight(c) })
+		return
+	}
 	a.topBarRow(c, locales.ToolbarCommands(), func() { a.toolbarCommands(c) }, func() { a.barRight(c) })
 }
 

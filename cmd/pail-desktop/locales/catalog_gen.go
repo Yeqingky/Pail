@@ -6042,6 +6042,96 @@ func (msgs Messages) McsMode() string {
 	return Catalog.Format(msgs.locale, "mcsMode", nil)
 }
 
+// McsInspectorMultiple says "Multiple files"
+// in the language the app shows.
+func McsInspectorMultiple() string { return In(i18n.Locale()).McsInspectorMultiple() }
+
+// McsInspectorMultiple says "Multiple files"
+// in the language of msgs.
+func (msgs Messages) McsInspectorMultiple() string {
+	return Catalog.Format(msgs.locale, "mcsInspectorMultiple", nil)
+}
+
+// McsKind says "Type"
+// in the language the app shows.
+func McsKind() string { return In(i18n.Locale()).McsKind() }
+
+// McsKind says "Type"
+// in the language of msgs.
+func (msgs Messages) McsKind() string {
+	return Catalog.Format(msgs.locale, "mcsKind", nil)
+}
+
+// McsKindFile says "File"
+// in the language the app shows.
+func McsKindFile() string { return In(i18n.Locale()).McsKindFile() }
+
+// McsKindFile says "File"
+// in the language of msgs.
+func (msgs Messages) McsKindFile() string {
+	return Catalog.Format(msgs.locale, "mcsKindFile", nil)
+}
+
+// McsKindFolder says "Folder"
+// in the language the app shows.
+func McsKindFolder() string { return In(i18n.Locale()).McsKindFolder() }
+
+// McsKindFolder says "Folder"
+// in the language of msgs.
+func (msgs Messages) McsKindFolder() string {
+	return Catalog.Format(msgs.locale, "mcsKindFolder", nil)
+}
+
+// McsLoaded says "Loaded"
+// in the language the app shows.
+func McsLoaded() string { return In(i18n.Locale()).McsLoaded() }
+
+// McsLoaded says "Loaded"
+// in the language of msgs.
+func (msgs Messages) McsLoaded() string {
+	return Catalog.Format(msgs.locale, "mcsLoaded", nil)
+}
+
+// McsNodeID says "Node ID"
+// in the language the app shows.
+func McsNodeID() string { return In(i18n.Locale()).McsNodeID() }
+
+// McsNodeID says "Node ID"
+// in the language of msgs.
+func (msgs Messages) McsNodeID() string {
+	return Catalog.Format(msgs.locale, "mcsNodeID", nil)
+}
+
+// McsInstanceID says "Instance ID"
+// in the language the app shows.
+func McsInstanceID() string { return In(i18n.Locale()).McsInstanceID() }
+
+// McsInstanceID says "Instance ID"
+// in the language of msgs.
+func (msgs Messages) McsInstanceID() string {
+	return Catalog.Format(msgs.locale, "mcsInstanceID", nil)
+}
+
+// McsPath says "Path"
+// in the language the app shows.
+func McsPath() string { return In(i18n.Locale()).McsPath() }
+
+// McsPath says "Path"
+// in the language of msgs.
+func (msgs Messages) McsPath() string {
+	return Catalog.Format(msgs.locale, "mcsPath", nil)
+}
+
+// McsSelectInstance says "Select an instance in the sidebar"
+// in the language the app shows.
+func McsSelectInstance() string { return In(i18n.Locale()).McsSelectInstance() }
+
+// McsSelectInstance says "Select an instance in the sidebar"
+// in the language of msgs.
+func (msgs Messages) McsSelectInstance() string {
+	return Catalog.Format(msgs.locale, "mcsSelectInstance", nil)
+}
+
 // McsMenuActions says "Item actions"
 // in the language the app shows.
 func McsMenuActions() string { return In(i18n.Locale()).McsMenuActions() }
@@ -6080,26 +6170,6 @@ func McsNoFiles() string { return In(i18n.Locale()).McsNoFiles() }
 // in the language of msgs.
 func (msgs Messages) McsNoFiles() string {
 	return Catalog.Format(msgs.locale, "mcsNoFiles", nil)
-}
-
-// McsNoInstances says "This node has no instances"
-// in the language the app shows.
-func McsNoInstances() string { return In(i18n.Locale()).McsNoInstances() }
-
-// McsNoInstances says "This node has no instances"
-// in the language of msgs.
-func (msgs Messages) McsNoInstances() string {
-	return Catalog.Format(msgs.locale, "mcsNoInstances", nil)
-}
-
-// McsNoNodes says "No nodes are connected to this panel"
-// in the language the app shows.
-func McsNoNodes() string { return In(i18n.Locale()).McsNoNodes() }
-
-// McsNoNodes says "No nodes are connected to this panel"
-// in the language of msgs.
-func (msgs Messages) McsNoNodes() string {
-	return Catalog.Format(msgs.locale, "mcsNoNodes", nil)
 }
 
 // McsNode says "Node"
@@ -9060,6 +9130,46 @@ func SidebarNewBucket() string { return In(i18n.Locale()).SidebarNewBucket() }
 // in the language of msgs.
 func (msgs Messages) SidebarNewBucket() string {
 	return Catalog.Format(msgs.locale, "sidebarNewBucket", nil)
+}
+
+// SidebarInstances says "Instances"
+// in the language the app shows.
+func SidebarInstances() string { return In(i18n.Locale()).SidebarInstances() }
+
+// SidebarInstances says "Instances"
+// in the language of msgs.
+func (msgs Messages) SidebarInstances() string {
+	return Catalog.Format(msgs.locale, "sidebarInstances", nil)
+}
+
+// SidebarFilterInstances says "Filter instances"
+// in the language the app shows.
+func SidebarFilterInstances() string { return In(i18n.Locale()).SidebarFilterInstances() }
+
+// SidebarFilterInstances says "Filter instances"
+// in the language of msgs.
+func (msgs Messages) SidebarFilterInstances() string {
+	return Catalog.Format(msgs.locale, "sidebarFilterInstances", nil)
+}
+
+// SidebarNoInstances says "No instances"
+// in the language the app shows.
+func SidebarNoInstances() string { return In(i18n.Locale()).SidebarNoInstances() }
+
+// SidebarNoInstances says "No instances"
+// in the language of msgs.
+func (msgs Messages) SidebarNoInstances() string {
+	return Catalog.Format(msgs.locale, "sidebarNoInstances", nil)
+}
+
+// SidebarNoMatchingInstances says "No matching instances"
+// in the language the app shows.
+func SidebarNoMatchingInstances() string { return In(i18n.Locale()).SidebarNoMatchingInstances() }
+
+// SidebarNoMatchingInstances says "No matching instances"
+// in the language of msgs.
+func (msgs Messages) SidebarNoMatchingInstances() string {
+	return Catalog.Format(msgs.locale, "sidebarNoMatchingInstances", nil)
 }
 
 // SidebarNoAccount says "No account"

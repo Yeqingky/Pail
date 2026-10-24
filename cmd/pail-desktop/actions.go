@@ -111,7 +111,7 @@ func (a *app) finishWatch(w *watch, ts []Task, result core.TaskGroupResult, grou
 	if w.loc.AccountID == a.scope.AccountID && w.loc.Bucket == a.scope.Bucket && a.scope.Bucket != "" {
 		a.reload()
 	}
-	if w.kind == "mcs-upload" && a.tool == "mcs" && a.accountID == w.mcsAccount &&
+	if w.kind == "mcs-upload" && a.mcsBrowser() && a.accountID == w.mcsAccount &&
 		a.tl.mcs.daemonID == w.mcsDaemon && a.tl.mcs.instanceID == w.mcsInstance {
 		a.mcsLoadFiles()
 	}

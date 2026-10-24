@@ -103,6 +103,8 @@ type app struct {
 	bucketsGen   int
 	bucketFilter string
 	filterH      ui.Handle
+	mcsFilter    string
+	mcsFilterH   ui.Handle
 	searchH      ui.Handle
 	navSel       string // sidebar choice: "b:<bucket>" or "t:<tool>"
 	tool         string // "" when the object browser shows
@@ -347,6 +349,8 @@ func (a *app) selectAccount(id string) {
 	a.accountID = id
 	a.scope = Scope{AccountID: id}
 	a.navSel, a.tool = "", ""
+	a.tl.mcs.loadedFor = ""
+	a.mcsFilter = ""
 	if a.menuInstall != nil {
 		a.menuInstall() // capabilities may differ between accounts
 	}

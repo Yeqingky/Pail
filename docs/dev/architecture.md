@@ -31,7 +31,7 @@ tools/pack         归档写入，保证可执行文件权限为 0755
 - 服务层在每个操作入口用 `requireCapability` 校验；未声明的能力返回 `Unsupported`，不执行任何网络请求。
 - 桌面界面的命令表、工具栏、上下文菜单、命令面板、侧栏工具和检查器标签都通过同一条可见性判断过滤，因此未声明的功能不会显示，也不能通过快捷键运行。
 - 内置插件：`aws` 声明 S3 协议操作加 `cloudfront`；`s3` 声明 S3 协议操作，不含 `cloudfront`；`mcsmanager` 只声明 `mcs.*` 文件管理操作。
-- MCSManager 不使用 `Location`：节点 ID、实例 UUID 和实例内绝对路径构成资源地址。它的文件操作在 `internal/app/mcsmanager.go`，界面在 `cmd/pail-desktop/mcs_tool.go`，协议客户端在 `internal/mcsmanager`。面板 API 密钥存在钥匙串里，只以 `apikey` 查询参数发送；错误和日志不记录请求 URL。
+- MCSManager 不使用 `Location`：节点 ID、实例 UUID 和实例内绝对路径构成资源地址。它的文件操作在 `internal/app/mcsmanager.go`，界面在 `cmd/pail-desktop/mcs_tool.go`（侧栏节点/实例树、文件表、检查器 Overview/Headers），协议客户端在 `internal/mcsmanager`。面板凭据存在钥匙串里；API Key 模式只以 `apikey` 查询参数发送，用户名密码模式使用面板会话 cookie 与 `token` 参数；错误和日志不记录请求 URL。
 
 ## 2. 线程规则
 
